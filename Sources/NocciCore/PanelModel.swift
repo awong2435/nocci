@@ -8,6 +8,9 @@ public final class PanelModel {
     public let store: NotificationStore
     public private(set) var state: PanelState = .hidden
     public var alertDuration: AlertDuration
+    /// Older notifications that arrived while the current alert was up, newest first (at most two). They show as
+    /// a stack behind the alert, like Notification Center, instead of being replaced.
+    public private(set) var stackedAlerts: [NotificationItem.ID] = []
 
     @ObservationIgnored private var expiry: Task<Void, Never>?
 
@@ -23,12 +26,17 @@ public final class PanelModel {
     }
 
     /// A notification arrived. Shows it as an alert unless it was already known or dismissed.
-    /// A newer notification replaces the current alert and restarts the timer.
+    /// If an alert is already up, the new one goes on top and the old one stacks behind it; the timer restarts.
     public func receive(_ item: NotificationItem) {
         let isNew = !store.allItems.contains { $0.id == item.id }
         store.ingest([item])
         // Hidden apps and dismissed notifications don't alert. While the list is open, new ones just appear in it.
         guard isNew, store.isVisible(item), state != .list else { return }
+        if case .alert(let current) = state {
+            stackedAlerts = Array(([current] + stackedAlerts).prefix(2))
+        } else {
+            stackedAlerts = []
+        }
         state = .alert(item.id)
         scheduleExpiry(for: item.id)
     }
@@ -36,6 +44,7 @@ public final class PanelModel {
     /// Opens the island and, when the notification list is shown in it, marks everything as read.
     public func openList(marksRead: Bool = true, now: Date = Date()) {
         expiry?.cancel()
+        stackedAlerts = []
         if marksRead { store.markAllRead(now: now) }
         state = .list
     }
@@ -51,6 +60,7 @@ public final class PanelModel {
     public func expireAlert(id: NotificationItem.ID) {
         guard state == .alert(id) else { return }
         expiry?.cancel()
+        stackedAlerts = []
         state = restingState
     }
 
@@ -67,10 +77,18 @@ public final class PanelModel {
 
     /// Dismisses a notification: it leaves the list and stops counting as unread. If it's the alert showing,
     /// the alert collapses.
+    /// Dismissing the top of a stack brings up the next one in it.
     public func dismiss(id: NotificationItem.ID) {
         store.dismiss(id: id)
+        stackedAlerts.removeAll { $0 == id }
         if state == .alert(id) {
-            expireAlert(id: id)
+            if stackedAlerts.isEmpty {
+                expireAlert(id: id)
+            } else {
+                let next = stackedAlerts.removeFirst()
+                state = .alert(next)
+                scheduleExpiry(for: next)
+            }
         }
     }
 

@@ -24,6 +24,15 @@ final class NotchPanel: NSPanel {
         animationBehavior = .none
     }
 
+    /// Gets every scroll event aimed at this panel first; return true to consume it (a swipe to dismiss).
+    /// Done here rather than with an event monitor, which doesn't see them while Nocci isn't the active app.
+    var scrollInterceptor: ((NSEvent) -> Bool)?
+
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .scrollWheel, scrollInterceptor?(event) == true { return }
+        super.sendEvent(event)
+    }
+
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 

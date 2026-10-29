@@ -1,6 +1,9 @@
 import AppKit
 import NocciCore
+import OSLog
 import SwiftUI
+
+private let log = Logger(subsystem: "local.nocci", category: "swipe")
 
 /// Swipe to dismiss, for both input styles: two-finger trackpad swipes (scroll events with phases, fed in by the
 /// panel's scroll monitor) and click-dragging. Alerts swipe up; list rows swipe sideways.
@@ -44,7 +47,10 @@ final class SwipeTracker {
         case .began:
             active = nil
             let point = view.convert(event.locationInWindow, from: nil)
-            guard let (id, target) = targets.first(where: { $0.value.frame.contains(point) }) else { return false }
+            let hit = targets.first(where: { $0.value.frame.contains(point) })
+            // Diagnostics only: whether a swipe started on a notification, never content.
+            log.debug("swipe began, on a notification: \(hit != nil, privacy: .public)")
+            guard let (id, target) = hit else { return false }
             let horizontal = abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY)
             guard horizontal == (target.axis == .horizontal) else { return false }
             active = (id, target.axis)
@@ -149,6 +155,8 @@ private struct SwipeToDismiss: ViewModifier {
 /// What the list and alert can do with a notification. Supplied by the panel through the environment.
 struct NotificationActions {
     var open: (NotificationItem) -> Void = { _ in }
+    /// Opens the full list (clicking a stack of alerts).
+    var openList: () -> Void = {}
     /// Dismisses notifications (Clear All, or one app's group).
     var dismiss: ([NotificationItem.ID]) -> Void = { _ in }
 }

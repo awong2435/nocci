@@ -11,6 +11,7 @@ public enum SettingsKey {
     public static let indicatorStyle = "indicatorStyle"
     public static let indicatorSide = "indicatorSide"
     public static let screenChoice = "screenChoice"
+    public static let hideFromScreenRecordings = "hideFromScreenRecordings"
     /// Multiplier for text in alerts and the list.
     public static let fontScale = "fontScale"
     /// Array of plugin IDs, in the order their sections appear in the island.
@@ -116,6 +117,10 @@ public final class NocciSettings {
     public var screenChoice: ScreenChoice {
         didSet { defaults.set(screenChoice.rawValue, forKey: SettingsKey.screenChoice) }
     }
+    /// Keeps the island out of screenshots and screen recordings (it still shows on screen).
+    public var hideFromScreenRecordings: Bool {
+        didSet { defaults.set(hideFromScreenRecordings, forKey: SettingsKey.hideFromScreenRecordings) }
+    }
     /// Seconds the mouse rests on the notch before the list opens.
     public var hoverOpenDelay: Double {
         didSet { defaults.set(hoverOpenDelay, forKey: SettingsKey.hoverOpenDelay) }
@@ -149,6 +154,7 @@ public final class NocciSettings {
         indicatorStyle = defaults.string(forKey: SettingsKey.indicatorStyle).flatMap(IndicatorStyle.init(rawValue:)) ?? .light
         indicatorSide = defaults.string(forKey: SettingsKey.indicatorSide).flatMap(IndicatorSide.init(rawValue:)) ?? .right
         screenChoice = defaults.string(forKey: SettingsKey.screenChoice).flatMap(ScreenChoice.init(rawValue:)) ?? .notched
+        hideFromScreenRecordings = defaults.bool(forKey: SettingsKey.hideFromScreenRecordings)
         hoverOpenDelay = defaults.object(forKey: SettingsKey.hoverOpenDelay) as? Double ?? 0.2
         hoverCloseDelay = defaults.object(forKey: SettingsKey.hoverCloseDelay) as? Double ?? 0.4
         let scale = defaults.object(forKey: SettingsKey.fontScale) as? Double ?? 1
@@ -180,6 +186,7 @@ public final class NocciSettings {
         indicatorStyle = .light
         indicatorSide = .right
         screenChoice = .notched
+        hideFromScreenRecordings = false
         hoverOpenDelay = 0.2
         hoverCloseDelay = 0.4
         fontScale = 1

@@ -17,7 +17,8 @@ final class PanelPresentation {
     }
 
     enum Content: Equatable {
-        case alert(item: NotificationItem, scrolls: Bool, layoutSize: CGSize)
+        /// `stacked`: how many older alerts peek out below this one (0 to 2).
+        case alert(item: NotificationItem, scrolls: Bool, layoutSize: CGSize, stacked: Int)
         /// The island at rest: tucked behind the notch, or widened around it to show a plugin's compact views
         /// (media while playing), with the unread indicator beside it when there's something unread.
         case rest(layoutSize: CGSize, indicator: Indicator?, compactPluginID: String?)
@@ -27,7 +28,7 @@ final class PanelPresentation {
         /// The size the content lays out at: the island's final size, so text doesn't reflow while it grows.
         var layoutSize: CGSize {
             switch self {
-            case .alert(_, _, let size), .rest(let size, _, _), .expanded(let size): size
+            case .alert(_, _, let size, _), .rest(let size, _, _), .expanded(let size): size
             }
         }
 
@@ -39,10 +40,15 @@ final class PanelPresentation {
                     width: size.width + 2 * CounterBadge.sideRoom(for: indicator.style),
                     height: max(size.height, CounterBadge.topInset + 16)
                 )
-            case .alert, .rest, .expanded:
+            case .alert(_, _, let size, let stacked):
+                CGSize(width: size.width, height: size.height + Self.stackLedge * CGFloat(stacked))
+            case .rest, .expanded:
                 layoutSize
             }
         }
+
+        /// How far each stacked alert peeks out below the one in front.
+        static let stackLedge: CGFloat = 7
 
         var isRest: Bool {
             if case .rest = self { true } else { false }
@@ -51,7 +57,7 @@ final class PanelPresentation {
         /// Changes when the content should cross-fade. A different alert counts as different content.
         var identity: String {
             switch self {
-            case .alert(let item, _, _): "alert-\(item.id)"
+            case .alert(let item, _, _, _): "alert-\(item.id)"
             case .rest(_, _, let compact): "rest-\(compact ?? "none")"
             case .expanded: "expanded"
             }
@@ -104,7 +110,6 @@ final class PanelController: NSObject {
     /// The screen the island is currently on.
     private var currentScreenID: CGDirectDisplayID?
     private let swipeTracker = SwipeTracker()
-    private var scrollMonitor: Any?
     /// Watches for Escape, only while an alert or the list is open. See `watchEscape(_:)`.
     private var escapeMonitor: Any?
     /// Mouse x and width when an edge drag started; nil when not resizing.
@@ -119,6 +124,9 @@ final class PanelController: NSObject {
 
         let actions = NotificationActions(
             open: { [weak self] item in self?.open(item) },
+            openList: { [model, settings] in
+                model.openList(marksRead: settings.activePlugins.contains("notifications"))
+            },
             dismiss: { [weak model] ids in ids.forEach { model?.dismiss(id: $0) } }
         )
         let hostingView = FirstClickHostingView(rootView: NotchRootView(
@@ -150,11 +158,10 @@ final class PanelController: NSObject {
         )
         watchRightClicks()
         swipeTracker.onDismiss = { [weak model] id in model?.dismiss(id: id) }
-        // Two-finger swipes arrive as scroll events, delivered to the panel under the pointer even when Nocci
-        // isn't the active app.
-        scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
-            guard let self, event.window === panel, let view = panel.contentView else { return event }
-            return swipeTracker.handleScroll(event, in: view) ? nil : event
+        // Two-finger swipes arrive as scroll events on the panel under the pointer.
+        panel.scrollInterceptor = { [weak self] event in
+            guard let self, let view = panel.contentView else { return false }
+            return swipeTracker.handleScroll(event, in: view)
         }
 
         trackState()
@@ -185,6 +192,7 @@ final class PanelController: NSObject {
             _ = settings.indicatorStyle
             _ = settings.indicatorSide
             _ = settings.screenChoice
+            _ = settings.hideFromScreenRecordings
             _ = settings.fontScale
             _ = settings.pluginOrder
             _ = settings.enabledPlugins
@@ -372,6 +380,8 @@ final class PanelController: NSObject {
     // MARK: - Layout
 
     private func update(logAlert: Bool = true) {
+        // Out of screenshots and recordings when asked; still visible on screen.
+        panel.sharingType = settings.hideFromScreenRecordings ? .none : .readOnly
         guard let screen = targetScreen() else { return }
         let geometry = screen.notchGeometry
         let notchHeight = geometry.notchSize.height
@@ -405,7 +415,8 @@ final class PanelController: NSObject {
             let maxHeight = min(screen.frame.height * 0.6, 520)
             let naturalHeight = AlertCard.naturalHeight(of: item, width: contentWidth, notchHeight: notchHeight, fontScale: fontScale)
             let size = CGSize(width: wideWidth, height: min(naturalHeight, maxHeight))
-            morph(to: .alert(item: item, scrolls: naturalHeight > maxHeight, layoutSize: size), radius: 22, geometry: geometry)
+            let stacked = preview == .alert ? 0 : model.stackedAlerts.count
+            morph(to: .alert(item: item, scrolls: naturalHeight > maxHeight, layoutSize: size, stacked: stacked), radius: 22, geometry: geometry)
 
             // ID and latency only; never notification text.
             guard logAlert, preview == nil else { return }
@@ -523,6 +534,7 @@ private struct NotchRootView: View {
             }
             .background(shape.fill(.black))
             .clipShape(shape)
+            .background(alignment: .bottom) { stackLayers }
             .overlay(alignment: .leading) { if isResizable { resizeHandle(edge: -1) } }
             .overlay(alignment: .trailing) { if isResizable { resizeHandle(edge: 1) } }
             .overlay(alignment: indicatorAlignment) {
@@ -537,6 +549,23 @@ private struct NotchRootView: View {
             }
             .environment(\.nocciFontScale, CGFloat(settings.fontScale))
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    /// Older alerts that arrived together peek out below the current one, like a Notification Center stack.
+    @ViewBuilder
+    private var stackLayers: some View {
+        if case .alert(_, _, _, let stacked) = presentation.content, stacked > 0 {
+            ZStack(alignment: .bottom) {
+                ForEach(Array((1...stacked).reversed()), id: \.self) { level in
+                    UnevenRoundedRectangle(bottomLeadingRadius: 18, bottomTrailingRadius: 18)
+                        .fill(Color(white: 0.16 - 0.04 * CGFloat(level)))
+                        .frame(height: 30)
+                        .padding(.horizontal, ear + 14 * CGFloat(level))
+                        .offset(y: PanelPresentation.Content.stackLedge * CGFloat(level))
+                }
+            }
+            .transition(.opacity)
+        }
     }
 
     /// Alerts and the open island can be resized by dragging either side edge.
@@ -585,11 +614,12 @@ private struct NotchRootView: View {
     @ViewBuilder
     private func contentView(_ content: PanelPresentation.Content) -> some View {
         switch content {
-        case .alert(let item, let scrolls, _):
+        case .alert(let item, let scrolls, _, let stacked):
             AlertCard(item: item, notchHeight: presentation.notchHeight, scrolls: scrolls)
-                // The whole card, not just its text: click opens the app, swipe up dismisses.
+                // The whole card, not just its text: click opens the app (or the list, for a stack), swipe up
+                // dismisses.
                 .contentShape(Rectangle())
-                .onTapGesture { actions.open(item) }
+                .onTapGesture { if stacked > 0 { actions.openList() } else { actions.open(item) } }
                 .swipeToDismiss(item.id, axis: .vertical, tracker: swipeTracker)
         case .rest(_, _, let compactID):
             if let compactID, let plugin = plugins[compactID] {

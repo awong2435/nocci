@@ -142,11 +142,11 @@ extension PanelModelTests {
 extension PanelModelTests {
     @Test func dismissingTheAlertRemovesItAndCollapses() {
         let model = model()
-        model.receive(item("a"))
+        model.store.ingest([item("old")])
         model.receive(item("b"))
         model.dismiss(id: "b")
         #expect(model.state == .counter)
-        #expect(model.store.items.map(\.id) == ["a"])
+        #expect(model.store.items.map(\.id) == ["old"])
         #expect(model.store.unreadCount == 1)
     }
 
@@ -166,5 +166,35 @@ extension PanelModelTests {
         model.store.hiddenApps = ["app"]
         model.receive(item("a"))
         #expect(model.state == .hidden)
+    }
+}
+
+extension PanelModelTests {
+    @Test func alertsArrivingTogetherStackNewestFirst() {
+        let model = model()
+        model.receive(item("a"))
+        model.receive(item("b"))
+        model.receive(item("c"))
+        model.receive(item("d"))
+        #expect(model.state == .alert("d"))
+        #expect(model.stackedAlerts == ["c", "b"])
+    }
+
+    @Test func dismissingTheTopOfAStackShowsTheNext() {
+        let model = model()
+        model.receive(item("a"))
+        model.receive(item("b"))
+        model.dismiss(id: "b")
+        #expect(model.state == .alert("a"))
+        #expect(model.stackedAlerts.isEmpty)
+    }
+
+    @Test func aFreshAlertStartsANewStack() {
+        let model = model()
+        model.receive(item("a"))
+        model.receive(item("b"))
+        model.dismissAlert()
+        model.receive(item("c"))
+        #expect(model.stackedAlerts.isEmpty)
     }
 }
