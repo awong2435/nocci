@@ -47,44 +47,42 @@ public struct DatabaseSource: NotificationSource {
     /// Synchronous version of `recent(limit:)`, for command-line use and tests.
     public func recent(limit: Int, now: Date) throws -> [NotificationItem] {
         try withDatabase { db in
-            try query(db, afterID: -1, deliveredAfter: nil, now: now, limit: limit).map(\.1)
+            try query(db, newest: limit, dueSince: nil, now: now)
         }
     }
 
     /// Polls for notifications that arrive, or whose scheduled time passes, after the stream starts.
+    ///
+    /// Record numbers can't be used to spot new ones: macOS reuses them after notifications are cleared, and
+    /// writes in batches seconds after delivery. So each poll reads the newest records (plus anything that
+    /// became due recently) and emits the ones whose unique ID hasn't been seen.
     public func newItems() -> AsyncStream<NotificationItem> {
         // Take the starting point now, not when the task first runs, so nothing that arrives
         // in between is skipped.
-        let startID: Int64 = (try? withDatabase { db in try maxRecordID(db) }) ?? 0
-        let startDate = Date()
+        let seen = Set(((try? withDatabase { db in try window(db, now: Date()) }) ?? []).map(\.id))
         let (stream, continuation) = AsyncStream<NotificationItem>.makeStream()
-        let task = Task { await poll(into: continuation, after: startID, since: startDate) }
+        let task = Task { await poll(into: continuation, seen: seen) }
         continuation.onTermination = { _ in task.cancel() }
         return stream
     }
 
-    private func poll(into continuation: AsyncStream<NotificationItem>.Continuation, after startID: Int64, since startDate: Date) async {
-        var lastID = startID
-        var lastCheck = startDate
+    private func poll(into continuation: AsyncStream<NotificationItem>.Continuation, seen startingSeen: Set<String>) async {
+        var seen = startingSeen
         while !Task.isCancelled {
             try? await Task.sleep(for: pollInterval)
-            let now = Date()
-            let fresh: [(Int64, NotificationItem)]
-            do {
-                fresh = try withDatabase { db in
-                    try query(db, afterID: lastID, deliveredAfter: lastCheck, now: now, limit: 100)
-                }
-            } catch {
-                continue
-            }
-            lastCheck = now
-            // Query returns newest first; emit oldest first.
-            for (recordID, item) in fresh.reversed() {
+            guard let items = try? withDatabase({ db in try window(db, now: Date()) }) else { continue }
+            // Newest first from the query; emit oldest first.
+            for item in items.reversed() where !seen.contains(item.id) {
+                seen.insert(item.id)
                 continuation.yield(item)
-                lastID = max(lastID, recordID)
             }
         }
         continuation.finish()
+    }
+
+    /// The records a poll looks at: the 100 newest, plus scheduled ones that came due in the last 5 minutes.
+    private func window(_ db: OpaquePointer, now: Date) throws -> [NotificationItem] {
+        try query(db, newest: 100, dueSince: now.addingTimeInterval(-300), now: now)
     }
 
     /// Table names, column names, and the plist keys seen in recent records.
@@ -140,7 +138,7 @@ public struct DatabaseSource: NotificationSource {
 
     /// Builds an item from one `record` row. Returns `nil` if the plist is unreadable.
     static func item(
-        recordID: Int64,
+        id: String,
         bundleID: String,
         data: Data,
         deliveredDate: Double,
@@ -149,7 +147,7 @@ public struct DatabaseSource: NotificationSource {
         guard let plist = plistDictionary(data) else { return nil }
         let req = plist["req"] as? [String: Any] ?? [:]
         return NotificationItem(
-            id: String(recordID),
+            id: id,
             appBundleID: bundleID,
             appName: appName(bundleID),
             title: req["titl"] as? String ?? "",
@@ -169,49 +167,44 @@ public struct DatabaseSource: NotificationSource {
     /// Records newer than `afterID`, or whose scheduled time passed after `deliveredAfter`, newest arrival first.
     /// `delivered_date` is the scheduled time for some apps (Calendar), so it can't be used for ordering,
     /// and anything still in the future hasn't been delivered yet.
-    private func query(
-        _ db: OpaquePointer,
-        afterID: Int64,
-        deliveredAfter: Date?,
-        now: Date,
-        limit: Int
-    ) throws -> [(Int64, NotificationItem)] {
+    /// The `newest` most recently written records, plus any whose scheduled time fell after `dueSince`, newest
+    /// arrival first. `delivered_date` is the scheduled time for some apps (Calendar), so it can't be used for
+    /// ordering, and anything still in the future hasn't been delivered yet.
+    private func query(_ db: OpaquePointer, newest: Int, dueSince: Date?, now: Date) throws -> [NotificationItem] {
         let sql = """
-            SELECT r.rec_id, a.identifier, r.data, r.delivered_date
+            SELECT r.rec_id, a.identifier, r.data, r.delivered_date, r.uuid
             FROM record r JOIN app a ON a.app_id = r.app_id
-            WHERE (r.rec_id > ?1 OR r.delivered_date > ?2) AND r.delivered_date <= ?3
+            WHERE r.delivered_date <= ?1
+              AND (r.rec_id IN (SELECT rec_id FROM record ORDER BY rec_id DESC LIMIT ?2) OR r.delivered_date > ?3)
             ORDER BY r.rec_id DESC
-            LIMIT ?4
             """
         let statement = try prepare(db, sql)
         defer { sqlite3_finalize(statement) }
-        sqlite3_bind_int64(statement, 1, afterID)
-        sqlite3_bind_double(statement, 2, deliveredAfter?.timeIntervalSinceReferenceDate ?? .greatestFiniteMagnitude)
-        sqlite3_bind_double(statement, 3, now.timeIntervalSinceReferenceDate)
-        sqlite3_bind_int64(statement, 4, Int64(limit))
+        sqlite3_bind_double(statement, 1, now.timeIntervalSinceReferenceDate)
+        sqlite3_bind_int64(statement, 2, Int64(newest))
+        sqlite3_bind_double(statement, 3, dueSince?.timeIntervalSinceReferenceDate ?? .greatestFiniteMagnitude)
 
-        var rows: [(Int64, NotificationItem)] = []
+        var items: [NotificationItem] = []
         while sqlite3_step(statement) == SQLITE_ROW {
-            let id = sqlite3_column_int64(statement, 0)
+            let recordID = sqlite3_column_int64(statement, 0)
             guard let bundleID = sqlite3_column_text(statement, 1).map({ String(cString: $0) }),
                   let data = columnData(statement, 2),
                   let item = Self.item(
-                      recordID: id,
+                      id: columnData(statement, 4).map(Self.hex) ?? "rec-\(recordID)",
                       bundleID: bundleID,
                       data: data,
                       deliveredDate: sqlite3_column_double(statement, 3),
                       appName: appName
                   )
             else { continue }
-            rows.append((id, item))
+            items.append(item)
         }
-        return rows
+        return items
     }
 
-    private func maxRecordID(_ db: OpaquePointer) throws -> Int64 {
-        let statement = try prepare(db, "SELECT COALESCE(MAX(rec_id), 0) FROM record")
-        defer { sqlite3_finalize(statement) }
-        return sqlite3_step(statement) == SQLITE_ROW ? sqlite3_column_int64(statement, 0) : 0
+    /// The record's unique ID as lowercase hex. Unlike `rec_id`, macOS never reuses it.
+    static func hex(_ data: Data) -> String {
+        data.map { String(format: "%02x", $0) }.joined()
     }
 
     /// Opens the database read-only for the duration of `body`.

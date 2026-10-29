@@ -16,7 +16,7 @@ struct DatabaseSourceTests {
         sqlite3_exec(db, """
             PRAGMA journal_mode = WAL;
             CREATE TABLE app (app_id INTEGER PRIMARY KEY, identifier VARCHAR);
-            CREATE TABLE record (rec_id INTEGER PRIMARY KEY, app_id INTEGER, data BLOB, delivered_date REAL);
+            CREATE TABLE record (rec_id INTEGER PRIMARY KEY, app_id INTEGER, data BLOB, delivered_date REAL, uuid BLOB);
             INSERT INTO app VALUES (1, 'com.tinyspeck.slackmacgap'), (2, 'com.apple.mail');
             """, nil, nil, nil)
         try Self.insert(db, recordID: 1, appID: 1, date: 100, req: ["titl": "Oldest", "body": "first"])
@@ -32,12 +32,15 @@ struct DatabaseSourceTests {
     static func insert(_ db: OpaquePointer?, recordID: Int64, appID: Int64, date: Double, req: [String: String]) throws {
         let data = try PropertyListSerialization.data(fromPropertyList: ["req": req, "app": "x"], format: .binary, options: 0)
         var statement: OpaquePointer?
-        sqlite3_prepare_v2(db, "INSERT INTO record VALUES (?, ?, ?, ?)", -1, &statement, nil)
+        sqlite3_prepare_v2(db, "INSERT INTO record VALUES (?, ?, ?, ?, ?)", -1, &statement, nil)
         defer { sqlite3_finalize(statement) }
         sqlite3_bind_int64(statement, 1, recordID)
         sqlite3_bind_int64(statement, 2, appID)
         _ = data.withUnsafeBytes { sqlite3_bind_blob(statement, 3, $0.baseAddress, Int32(data.count), nil) }
         sqlite3_bind_double(statement, 4, date)
+        // A fresh unique ID per insert, like macOS's (it never reuses them, unlike rec_id).
+        let uuid = withUnsafeBytes(of: UUID().uuid) { Data($0) }
+        _ = uuid.withUnsafeBytes { sqlite3_bind_blob(statement, 5, $0.baseAddress, Int32(uuid.count), unsafeBitCast(-1, to: sqlite3_destructor_type.self)) }
         #expect(sqlite3_step(statement) == SQLITE_DONE)
     }
 
@@ -96,5 +99,28 @@ extension DatabaseSourceTests {
 
         let first = await iterator.next()
         #expect(first?.title == "Live")
+    }
+}
+
+extension DatabaseSourceTests {
+    /// macOS reuses rec_id after the newest record is deleted, and writes seconds after delivery; a new
+    /// notification on a reused rec_id, with a delivered date already in the past, must still come through.
+    @Test(.timeLimit(.minutes(1)))
+    func newItemsCatchesANotificationOnAReusedRecordNumber() async throws {
+        var db: OpaquePointer?
+        sqlite3_open(url.path, &db)
+        sqlite3_busy_timeout(db, 5_000)
+        try Self.insert(db, recordID: 5, appID: 1, date: Date().timeIntervalSinceReferenceDate - 60, req: ["titl": "Cleared later"])
+
+        let source = DatabaseSource(url: url, pollInterval: .milliseconds(100))
+        var iterator = source.newItems().makeAsyncIterator()
+
+        try await Task.sleep(for: .milliseconds(250))
+        sqlite3_exec(db, "DELETE FROM record WHERE rec_id = 5", nil, nil, nil)
+        try Self.insert(db, recordID: 5, appID: 1, date: Date().timeIntervalSinceReferenceDate - 8, req: ["titl": "Reused"])
+        sqlite3_close(db)
+
+        let next = await iterator.next()
+        #expect(next?.title == "Reused")
     }
 }
