@@ -13,6 +13,13 @@ private final class PreviewModel {
     @ObservationIgnored var onChange: ((PanelController.Preview) -> Void)?
 }
 
+/// A plugin as listed in Settings.
+struct PluginInfo {
+    let id: String
+    let name: String
+    let systemImage: String
+}
+
 /// Owns the settings window. While it is open the notch shows a fixed preview, so changes can be seen live.
 @MainActor
 final class SettingsWindowController: NSObject, NSWindowDelegate {
@@ -20,12 +27,14 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     private static let height: CGFloat = 700
 
     private let settings: NocciSettings
+    private let plugins: [PluginInfo]
     private let onPreviewChange: (PanelController.Preview?) -> Void
     private let model = PreviewModel()
     private var window: NSWindow?
 
-    init(settings: NocciSettings, onPreviewChange: @escaping (PanelController.Preview?) -> Void) {
+    init(settings: NocciSettings, plugins: [PluginInfo], onPreviewChange: @escaping (PanelController.Preview?) -> Void) {
         self.settings = settings
+        self.plugins = plugins
         self.onPreviewChange = onPreviewChange
         super.init()
         model.onChange = { [weak self] preview in
@@ -59,7 +68,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         window.title = "Nocci Settings"
         window.isReleasedWhenClosed = false
         window.delegate = self
-        window.contentView = NSHostingView(rootView: SettingsView(settings: settings, model: model))
+        window.contentView = NSHostingView(rootView: SettingsView(settings: settings, model: model, plugins: plugins))
         window.center()
         return window
     }
@@ -69,6 +78,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
 private struct SettingsView: View {
     @Bindable var settings: NocciSettings
     @Bindable var model: PreviewModel
+    let plugins: [PluginInfo]
 
     var body: some View {
         Form {
@@ -92,6 +102,37 @@ private struct SettingsView: View {
                             .frame(width: 60, alignment: .trailing)
                     }
                 }
+                LabeledContent("Text size") {
+                    HStack {
+                        Slider(value: $settings.fontScale, in: NocciSettings.fontScaleRange, step: 0.05)
+                        Text(settings.fontScale.formatted(.percent.precision(.fractionLength(0))))
+                            .monospacedDigit()
+                            .frame(width: 60, alignment: .trailing)
+                    }
+                }
+            }
+
+            Section {
+                // A List (not Form rows) so rows can be dragged to reorder.
+                List {
+                    ForEach(settings.pluginOrder, id: \.self) { id in
+                        if let plugin = plugins.first(where: { $0.id == id }) {
+                            Toggle(isOn: Binding(
+                                get: { settings.enabledPlugins.contains(id) },
+                                set: { settings.setPlugin(id, enabled: $0) }
+                            )) {
+                                Label(plugin.name, systemImage: plugin.systemImage)
+                            }
+                        }
+                    }
+                    .onMove { settings.pluginOrder.move(fromOffsets: $0, toOffset: $1) }
+                }
+                .frame(height: CGFloat(settings.pluginOrder.count) * 30 + 8)
+                .scrollDisabled(true)
+            } header: {
+                Text("Plugins")
+            } footer: {
+                Text("Drag to reorder. When the island opens, plugins appear top to bottom in this order. Media asks for Automation (Music, Spotify) or Accessibility (other apps) permission the first time you use its controls.")
             }
 
             Section {

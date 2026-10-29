@@ -10,39 +10,50 @@ private let log = Logger(subsystem: "local.nocci", category: "panel")
 @MainActor
 @Observable
 final class PanelPresentation {
+    /// The unread indicator's look and side.
+    struct Indicator: Equatable {
+        let style: IndicatorStyle
+        let side: IndicatorSide
+    }
+
     enum Content: Equatable {
         case alert(item: NotificationItem, scrolls: Bool, layoutSize: CGSize)
-        /// The island tucked behind the notch, with the unread indicator beside it.
-        case counter(layoutSize: CGSize, style: IndicatorStyle, side: IndicatorSide)
-        case list(layoutSize: CGSize)
+        /// The island at rest: tucked behind the notch, or widened around it to show a plugin's compact views
+        /// (media while playing), with the unread indicator beside it when there's something unread.
+        case rest(layoutSize: CGSize, indicator: Indicator?, compactPluginID: String?)
+        /// The open island with the turned-on plugins' sections.
+        case expanded(layoutSize: CGSize)
 
         /// The size the content lays out at: the island's final size, so text doesn't reflow while it grows.
         var layoutSize: CGSize {
             switch self {
-            case .alert(_, _, let size), .counter(let size, _, _), .list(let size): size
+            case .alert(_, _, let size), .rest(let size, _, _), .expanded(let size): size
             }
         }
 
-        /// The window's size: the island, plus room beside the notch for the unread indicator.
+        /// The window's size: the island, plus room beside it for the unread indicator.
         var windowSize: CGSize {
             switch self {
-            case .counter(let size, let style, _):
-                CGSize(width: size.width + 2 * CounterBadge.sideRoom(for: style), height: max(size.height, CounterBadge.topInset + 16))
-            case .alert, .list:
+            case .rest(let size, let indicator?, _):
+                CGSize(
+                    width: size.width + 2 * CounterBadge.sideRoom(for: indicator.style),
+                    height: max(size.height, CounterBadge.topInset + 16)
+                )
+            case .alert, .rest, .expanded:
                 layoutSize
             }
         }
 
-        var isCounter: Bool {
-            if case .counter = self { true } else { false }
+        var isRest: Bool {
+            if case .rest = self { true } else { false }
         }
 
         /// Changes when the content should cross-fade. A different alert counts as different content.
         var identity: String {
             switch self {
             case .alert(let item, _, _): "alert-\(item.id)"
-            case .counter: "counter"
-            case .list: "list"
+            case .rest(_, _, let compact): "rest-\(compact ?? "none")"
+            case .expanded: "expanded"
             }
         }
     }
@@ -82,6 +93,7 @@ final class PanelController: NSObject {
 
     private let model: PanelModel
     private let settings: NocciSettings
+    private let plugins: [any NocciPlugin]
     private let openSettings: () -> Void
     private let panel = NotchPanel()
     private let presentation = PanelPresentation()
@@ -91,18 +103,24 @@ final class PanelController: NSObject {
     private var rightClickMonitors: [Any] = []
     /// The screen the island is currently on.
     private var currentScreenID: CGDirectDisplayID?
+    /// Mouse x and width when an edge drag started; nil when not resizing.
+    private var resizeStart: (mouseX: CGFloat, width: Double)?
 
-    init(model: PanelModel, settings: NocciSettings, openSettings: @escaping () -> Void) {
+    init(model: PanelModel, settings: NocciSettings, plugins: [any NocciPlugin], openSettings: @escaping () -> Void) {
         self.model = model
         self.settings = settings
+        self.plugins = plugins
         self.openSettings = openSettings
         super.init()
 
         let hostingView = FirstClickHostingView(rootView: NotchRootView(
             presentation: presentation,
             store: model.store,
+            settings: settings,
+            plugins: Dictionary(uniqueKeysWithValues: plugins.map { ($0.id, $0) }),
             ear: Self.ear,
-            onTapAlert: { [weak model] in model?.dismissAlert() }
+            onTapAlert: { [weak model] in model?.dismissAlert() },
+            onResize: { [weak self] event in self?.resize(event) }
         ))
         // The panel decides its size; the SwiftUI view just fills it.
         hostingView.sizingOptions = []
@@ -112,10 +130,12 @@ final class PanelController: NSObject {
 
         hoverTracker = HoverTracker(
             decide: { [weak self] point in self?.hoverAction(at: point) },
-            perform: { [weak model] action in
+            perform: { [model, settings] action in
+                // Opening only counts as reading notifications if their section is actually shown.
+                let showsNotifications = settings.activePlugins.contains("notifications")
                 switch action {
-                case .open: model?.openList()
-                case .close: model?.closeList()
+                case .open: model.openList(marksRead: showsNotifications)
+                case .close: model.closeList(marksRead: showsNotifications)
                 }
             }
         )
@@ -123,6 +143,7 @@ final class PanelController: NSObject {
 
         trackState()
         trackSettings()
+        trackPlugins()
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(screensChanged),
@@ -148,12 +169,40 @@ final class PanelController: NSObject {
             _ = settings.indicatorStyle
             _ = settings.indicatorSide
             _ = settings.screenChoice
+            _ = settings.fontScale
+            _ = settings.pluginOrder
+            _ = settings.enabledPlugins
         } onChange: { [weak self] in
             Task { @MainActor in
                 self?.update(logAlert: false)
                 self?.trackSettings()
             }
         }
+    }
+
+    /// Re-lays out when a plugin starts or stops having something to show (media starts playing).
+    private func trackPlugins() {
+        withObservationTracking {
+            for plugin in plugins {
+                _ = plugin.hasContent
+                _ = plugin.showsCompact
+                // Media's section changes height between its idle row and the full player, and with a message line.
+                if let media = plugin as? MediaPlugin {
+                    _ = media.hasTrack
+                    _ = media.message
+                }
+            }
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                self?.update(logAlert: false)
+                self?.trackPlugins()
+            }
+        }
+    }
+
+    /// Turned-on plugins in display order.
+    private var activePlugins: [any NocciPlugin] {
+        settings.activePlugins.compactMap { id in plugins.first { $0.id == id } }
     }
 
     /// Right-clicking the notch (or the island) opens Settings. Mouse monitors need no permission.
@@ -203,7 +252,7 @@ final class PanelController: NSObject {
 
     /// Hovering the notch opens the list. Once open, it stays while the mouse is over the notch or the island.
     private func hoverAction(at point: NSPoint) -> HoverTracker.Action? {
-        guard preview == nil, let screen = targetScreen() else { return nil }
+        guard preview == nil, resizeStart == nil, let screen = targetScreen() else { return nil }
 
         // Following the mouse: move the light (or nothing) to the screen the mouse is now on.
         if screen.displayID != currentScreenID, model.state == .counter || model.state == .hidden {
@@ -215,15 +264,50 @@ final class PanelController: NSObject {
         switch model.state {
         case .list:
             return inHotZone || overPanel ? nil : .close
-        case .counter:
+        case .counter, .hidden:
+            // At rest the panel is just the indicator or a plugin's compact views beside the notch.
             return inHotZone || overPanel ? .open : nil
-        case .hidden, .alert:
+        case .alert:
             return inHotZone ? .open : nil
         }
     }
 
     @objc private func screensChanged() {
         update(logAlert: false)
+    }
+
+    // MARK: - Resizing
+
+    enum ResizeEvent {
+        /// Dragging the left (-1) or right (+1) edge.
+        case drag(edge: CGFloat)
+        case end
+        /// Double-click: back to the default width.
+        case reset
+    }
+
+    /// Both edges move together, so the island stays centered on the notch: dragging an edge out by 10 pt widens
+    /// it by 20. Measured from the global mouse position, not inside the panel, so resizing the panel under the
+    /// cursor doesn't feed back into the drag.
+    private func resize(_ event: ResizeEvent) {
+        switch event {
+        case .drag(let edge):
+            let mouseX = NSEvent.mouseLocation.x
+            let start = resizeStart ?? (mouseX, settings.panelWidth)
+            resizeStart = start
+            // Just under the screen's width at most.
+            let screenLimit = Double((targetScreen()?.frame.width ?? 2000) - 40 - 2 * Self.ear)
+            let upper = max(NocciSettings.widthRange.lowerBound, min(NocciSettings.widthRange.upperBound, screenLimit))
+            settings.panelWidth = SymmetricResize.width(
+                edge: edge, startWidth: start.width, startX: start.mouseX, currentX: mouseX,
+                range: NocciSettings.widthRange.lowerBound...upper
+            )
+        case .end:
+            resizeStart = nil
+        case .reset:
+            resizeStart = nil
+            settings.panelWidth = NocciSettings.defaultWidth
+        }
     }
 
     // MARK: - Layout
@@ -234,6 +318,7 @@ final class PanelController: NSObject {
         let notchHeight = geometry.notchSize.height
         let contentWidth = CGFloat(settings.panelWidth)
         let wideWidth = contentWidth + 2 * Self.ear
+        let fontScale = CGFloat(settings.fontScale)
 
         // Moving to another screen: drop what's showing so the island grows from the new screen's notch.
         if screen.displayID != currentScreenID {
@@ -248,6 +333,8 @@ final class PanelController: NSObject {
         case .light: .counter
         case nil: model.state
         }
+        // Only alerts and the open island have edge handles; a drag can't still be going on otherwise.
+        if case .alert = state {} else if state != .list { resizeStart = nil }
 
         switch state {
         case .alert:
@@ -255,7 +342,7 @@ final class PanelController: NSObject {
                 return morph(to: nil, geometry: geometry)
             }
             let maxHeight = min(screen.frame.height * 0.6, 520)
-            let naturalHeight = AlertCard.naturalHeight(of: item, width: contentWidth, notchHeight: notchHeight)
+            let naturalHeight = AlertCard.naturalHeight(of: item, width: contentWidth, notchHeight: notchHeight, fontScale: fontScale)
             let size = CGSize(width: wideWidth, height: min(naturalHeight, maxHeight))
             morph(to: .alert(item: item, scrolls: naturalHeight > maxHeight, layoutSize: size), radius: 22, geometry: geometry)
 
@@ -264,27 +351,33 @@ final class PanelController: NSObject {
             let latency = Date().timeIntervalSince(item.date)
             log.notice("alert id=\(item.id, privacy: .public) app=\(item.appBundleID, privacy: .public) latency=\(latency, format: .fixed(precision: 2), privacy: .public)s")
 
-        case .counter:
-            // The island tucks back behind the notch; the indicator sits beside it. Screens without a notch show
-            // nothing at rest: alerts still drop in, and hovering the top center still opens the list.
-            guard settings.indicatorStyle != .off, geometry.hasNotch else { return morph(to: nil, geometry: geometry) }
-            let counter = PanelPresentation.Content.counter(
-                layoutSize: restingSize(geometry),
-                style: settings.indicatorStyle,
-                side: settings.indicatorSide
+        case .counter, .hidden:
+            // Screens without a notch show nothing at rest: alerts still drop in, and hovering the top center
+            // still opens the island.
+            guard geometry.hasNotch else { return morph(to: nil, geometry: geometry) }
+            let showsIndicator = state == .counter && settings.indicatorStyle != .off
+            let compact = activePlugins.first { $0.showsCompact }
+            guard showsIndicator || compact != nil else { return morph(to: nil, geometry: geometry) }
+
+            // Tucked behind the notch, or widened around it for a plugin's compact views.
+            var size = restingSize(geometry)
+            if compact != nil {
+                size.width += 2 * (compactWingWidth + Self.ear)
+            }
+            let rest = PanelPresentation.Content.rest(
+                layoutSize: size,
+                indicator: showsIndicator ? .init(style: settings.indicatorStyle, side: settings.indicatorSide) : nil,
+                compactPluginID: compact?.id
             )
-            morph(to: counter, geometry: geometry)
+            morph(to: rest, radius: compact == nil ? 8 : 14, geometry: geometry)
 
         case .list:
+            let sections = activePlugins.filter(\.hasContent)
             let maxHeight = min(screen.frame.height * 0.75, 700)
-            let naturalHeight = NotificationList.naturalHeight(of: model.store, width: contentWidth, notchHeight: notchHeight)
-            morph(to: .list(layoutSize: CGSize(width: wideWidth, height: min(naturalHeight, maxHeight))), radius: 22, geometry: geometry)
-
-        case .hidden:
-            morph(to: nil, geometry: geometry)
+            let naturalHeight = ExpandedView.naturalHeight(of: sections, width: contentWidth, notchHeight: notchHeight, fontScale: fontScale)
+            morph(to: .expanded(layoutSize: CGSize(width: wideWidth, height: min(naturalHeight, maxHeight))), radius: 22, geometry: geometry)
         }
     }
-
     /// The island at rest: the size of the notch, so it disappears behind it. On screens without a notch, a flat line.
     private func restingSize(_ geometry: NotchGeometry) -> CGSize {
         geometry.hasNotch ? geometry.notchSize : CGSize(width: CounterBadge.pillWidth + 2 * Self.ear, height: 0)
@@ -314,10 +407,11 @@ final class PanelController: NSObject {
         let canvas = CGSize(width: max(current.width, targetWindow.width), height: max(current.height, targetWindow.height))
         panel.setFrame(frame(for: canvas, geometry), display: false)
         // The indicator is only an indicator; let clicks beside the notch reach the menu bar. Hover still opens the list.
-        panel.ignoresMouseEvents = content?.isCounter ?? false
+        panel.ignoresMouseEvents = content?.isRest ?? false
         panel.orderFrontRegardless()
 
-        withAnimation(.spring(duration: 0.45, bounce: 0.22)) {
+        // Follow the mouse exactly while an edge is being dragged; spring otherwise.
+        withAnimation(resizeStart == nil ? .spring(duration: 0.45, bounce: 0.22) : nil) {
             presentation.size = target
             presentation.bottomRadius = content == nil ? 8 : radius
             presentation.content = content
@@ -342,8 +436,11 @@ final class PanelController: NSObject {
 private struct NotchRootView: View {
     let presentation: PanelPresentation
     let store: NotificationStore
+    let settings: NocciSettings
+    let plugins: [String: any NocciPlugin]
     let ear: CGFloat
     let onTapAlert: () -> Void
+    let onResize: (PanelController.ResizeEvent) -> Void
 
     var body: some View {
         let shape = IslandShape(ear: ear, bottomRadius: presentation.bottomRadius)
@@ -364,22 +461,63 @@ private struct NotchRootView: View {
             }
             .background(shape.fill(.black))
             .clipShape(shape)
+            .overlay(alignment: .leading) { if isResizable { resizeHandle(edge: -1) } }
+            .overlay(alignment: .trailing) { if isResizable { resizeHandle(edge: 1) } }
             .overlay(alignment: indicatorAlignment) {
-                if case .counter(_, let style, let side) = presentation.content {
-                    // Beside the notch, near the top. The island's ears sit inside the notch at rest.
-                    CounterBadge(style: style, count: store.unreadCount)
+                if case .rest(_, let indicator?, _) = presentation.content {
+                    // Beside the island, near the top.
+                    CounterBadge(style: indicator.style, count: store.unreadCount)
                         .fixedSize()
-                        .alignmentGuide(side == .right ? .leading : .trailing) { _ in 0 }
-                        .offset(x: side == .right ? CounterBadge.gap : -CounterBadge.gap, y: CounterBadge.topInset)
+                        .alignmentGuide(indicator.side == .right ? .leading : .trailing) { _ in 0 }
+                        .offset(x: indicator.side == .right ? CounterBadge.gap : -CounterBadge.gap, y: CounterBadge.topInset)
                         .transition(.scale.combined(with: .opacity))
                 }
             }
+            .environment(\.nocciFontScale, CGFloat(settings.fontScale))
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    /// Alerts and the open island can be resized by dragging either side edge.
+    private var isResizable: Bool {
+        switch presentation.content {
+        case .alert, .expanded: true
+        case .rest, nil: false
+        }
+    }
+
+    /// A thin invisible strip along one side edge (inside the ear) with a resize cursor.
+    private func resizeHandle(edge: CGFloat) -> some View {
+        Color.clear
+            .frame(width: 8)
+            .padding(.top, presentation.notchHeight)
+            .padding(edge < 0 ? .leading : .trailing, ear)
+            .contentShape(Rectangle())
+            // Set, not push/pop: the handle can vanish under the cursor (alert expires), and an unmatched push
+            // would leave the resize cursor stuck.
+            .onContinuousHover { phase in
+                switch phase {
+                case .active: NSCursor.resizeLeftRight.set()
+                case .ended: NSCursor.arrow.set()
+                }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                    .onChanged { _ in onResize(.drag(edge: edge)) }
+                    .onEnded { _ in onResize(.end) }
+            )
+            .onTapGesture(count: 2) { onResize(.reset) }
+            // If the island collapses mid-drag the gesture is cancelled without onEnded; end the resize anyway.
+            .onDisappear { onResize(.end) }
     }
 
     /// The indicator hangs off the island's right or left top corner.
     private var indicatorAlignment: Alignment {
-        if case .counter(_, _, .left) = presentation.content { .topLeading } else { .topTrailing }
+        if case .rest(_, let indicator?, _) = presentation.content, indicator.side == .left { .topLeading } else { .topTrailing }
+    }
+
+    /// Turned-on plugins with something to show, in display order.
+    private var sections: [any NocciPlugin] {
+        settings.activePlugins.compactMap { plugins[$0] }.filter(\.hasContent)
     }
 
     @ViewBuilder
@@ -391,12 +529,19 @@ private struct NotchRootView: View {
                 .contentShape(Rectangle())
                 // Temporary: clicking hides the alert. M7 adds swipe to dismiss, M8 makes click open the app.
                 .onTapGesture(perform: onTapAlert)
-        case .counter:
-            // Drawn as an overlay outside the island; see body.
-            EmptyView()
-        case .list:
-            // Always scrollable: notifications that arrive while it's open make it taller than measured.
-            NotificationList(store: store, notchHeight: presentation.notchHeight, scrolls: true)
+        case .rest(_, _, let compactID):
+            if let compactID, let plugin = plugins[compactID] {
+                // Compact views in the wings beside the notch.
+                HStack(spacing: 0) {
+                    plugin.makeCompactLeading().frame(width: compactWingWidth)
+                    Spacer(minLength: 0)
+                    plugin.makeCompactTrailing().frame(width: compactWingWidth)
+                }
+                .frame(height: presentation.notchHeight)
+            }
+        case .expanded:
+            // Always scrollable: sections can grow while it's open (new notifications), past what was measured.
+            ExpandedView(plugins: sections, notchHeight: presentation.notchHeight, scrolls: true)
         }
     }
 }

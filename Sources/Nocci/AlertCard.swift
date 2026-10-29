@@ -9,6 +9,7 @@ struct AlertCard: View {
     let notchHeight: CGFloat
     /// Wraps the text in a scroll view when it's taller than the panel allows.
     let scrolls: Bool
+    @Environment(\.nocciFontScale) private var scale
 
     var body: some View {
         Group {
@@ -26,27 +27,27 @@ struct AlertCard: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
                 if let icon = AppInfo.icon(for: item.appBundleID) {
-                    Image(nsImage: icon).resizable().frame(width: 16, height: 16)
+                    Image(nsImage: icon).resizable().frame(width: NocciType.iconSize(scale), height: NocciType.iconSize(scale))
                 }
                 Text(item.appName)
                 Spacer()
                 Text(item.date.formatted(date: .omitted, time: .shortened))
             }
-            .font(.caption)
+            .font(NocciType.meta(scale))
             .foregroundStyle(.white.opacity(0.6))
 
             Text(item.title)
-                .font(.headline)
+                .font(NocciType.title(scale))
                 .fixedSize(horizontal: false, vertical: true)
             if let subtitle = item.subtitle {
                 Text(subtitle)
-                    .font(.subheadline)
+                    .font(NocciType.subtitle(scale))
                     .foregroundStyle(.white.opacity(0.75))
                     .fixedSize(horizontal: false, vertical: true)
             }
             if !item.body.isEmpty {
                 Text(item.body)
-                    .font(.body)
+                    .font(NocciType.body(scale))
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -58,8 +59,10 @@ struct AlertCard: View {
 
     /// Height the card needs at `width` to show everything without scrolling.
     @MainActor
-    static func naturalHeight(of item: NotificationItem, width: CGFloat, notchHeight: CGFloat) -> CGFloat {
-        let probe = NSHostingView(rootView: AlertCard(item: item, notchHeight: notchHeight, scrolls: false).frame(width: width))
+    static func naturalHeight(of item: NotificationItem, width: CGFloat, notchHeight: CGFloat, fontScale: CGFloat) -> CGFloat {
+        let probe = NSHostingView(rootView: AlertCard(item: item, notchHeight: notchHeight, scrolls: false)
+            .environment(\.nocciFontScale, fontScale)
+            .frame(width: width))
         return probe.fittingSize.height
     }
 }

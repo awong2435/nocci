@@ -22,6 +22,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let dismissed = Set(defaults.stringArray(forKey: SettingsKey.dismissedIDs) ?? [])
         return NotificationStore(lastOpened: lastOpened, dismissedIDs: dismissed)
     }
+    /// Every compiled-in plugin. Settings decides which are on and their order.
+    private lazy var plugins: [any NocciPlugin] = [MediaPlugin(), NotificationsPlugin(store: model.store)]
+    private var activePluginIDs: Set<String> = []
     private var panelController: PanelController?
     private var settingsWindow: SettingsWindowController?
     private var statusItem: NSStatusItem?
@@ -31,9 +34,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Menu bar only, no Dock icon (LSUIElement covers the bundled app; this covers `swift run`).
         NSApp.setActivationPolicy(.accessory)
-        panelController = PanelController(model: model, settings: settings) { [weak self] in
+        panelController = PanelController(model: model, settings: settings, plugins: plugins) { [weak self] in
             self?.showSettings()
         }
+        activatePluginsOnChange()
         setUpStatusItem()
         saveReadStateOnChange()
         applyAlertDurationOnChange()
@@ -42,11 +46,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func showSettings() {
         if settingsWindow == nil {
-            settingsWindow = SettingsWindowController(settings: settings) { [weak self] preview in
+            let pluginInfo = plugins.map { PluginInfo(id: $0.id, name: $0.name, systemImage: $0.systemImage) }
+            settingsWindow = SettingsWindowController(settings: settings, plugins: pluginInfo) { [weak self] preview in
                 self?.panelController?.preview = preview
             }
         }
         settingsWindow?.show()
+    }
+
+    /// Starts turned-on plugins and stops turned-off ones, now and whenever Settings changes.
+    /// Only calls `setActive` when a plugin's state actually changes.
+    private func activatePluginsOnChange() {
+        withObservationTracking {
+            for plugin in plugins {
+                let active = settings.enabledPlugins.contains(plugin.id)
+                guard activePluginIDs.contains(plugin.id) != active else { continue }
+                if active { activePluginIDs.insert(plugin.id) } else { activePluginIDs.remove(plugin.id) }
+                plugin.setActive(active)
+            }
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.activatePluginsOnChange() }
+        }
     }
 
     /// Keeps the model's alert duration in step with Settings.

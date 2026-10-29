@@ -9,6 +9,7 @@ struct NotificationList: View {
     let notchHeight: CGFloat
     /// Wraps the list in a scroll view when it's taller than the panel allows.
     let scrolls: Bool
+    @Environment(\.nocciFontScale) private var scale
 
     var body: some View {
         Group {
@@ -26,6 +27,7 @@ struct NotificationList: View {
         VStack(alignment: .leading, spacing: 14) {
             if store.items.isEmpty {
                 Text("No notifications")
+                    .font(NocciType.body(scale))
                     .foregroundStyle(.white.opacity(0.5))
                     .frame(maxWidth: .infinity)
             }
@@ -33,12 +35,12 @@ struct NotificationList: View {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 6) {
                         if let icon = AppInfo.icon(for: group.appBundleID) {
-                            Image(nsImage: icon).resizable().frame(width: 16, height: 16)
+                            Image(nsImage: icon).resizable().frame(width: NocciType.iconSize(scale), height: NocciType.iconSize(scale))
                         }
                         Text(group.appName).fontWeight(.semibold)
                         Text("\(group.items.count)")
                     }
-                    .font(.caption)
+                    .font(NocciType.meta(scale))
                     .foregroundStyle(.white.opacity(0.6))
 
                     ForEach(group.items) { item in
@@ -54,35 +56,38 @@ struct NotificationList: View {
 
     /// Height the list needs at `width` to show everything without scrolling.
     @MainActor
-    static func naturalHeight(of store: NotificationStore, width: CGFloat, notchHeight: CGFloat) -> CGFloat {
-        let probe = NSHostingView(rootView: NotificationList(store: store, notchHeight: notchHeight, scrolls: false).frame(width: width))
+    static func naturalHeight(of store: NotificationStore, width: CGFloat, notchHeight: CGFloat, fontScale: CGFloat) -> CGFloat {
+        let probe = NSHostingView(rootView: NotificationList(store: store, notchHeight: notchHeight, scrolls: false)
+            .environment(\.nocciFontScale, fontScale)
+            .frame(width: width))
         return probe.fittingSize.height
     }
 }
 
 private struct NotificationRow: View {
     let item: NotificationItem
+    @Environment(\.nocciFontScale) private var scale
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(alignment: .firstTextBaseline) {
                 Text(item.title)
-                    .font(.subheadline.weight(.semibold))
+                    .font(NocciType.title(scale))
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer()
                 Text(timestamp)
-                    .font(.caption2)
+                    .font(NocciType.meta(scale))
                     .foregroundStyle(.white.opacity(0.5))
             }
             if let subtitle = item.subtitle {
                 Text(subtitle)
-                    .font(.caption)
+                    .font(NocciType.subtitle(scale))
                     .foregroundStyle(.white.opacity(0.75))
                     .fixedSize(horizontal: false, vertical: true)
             }
             if !item.body.isEmpty {
                 Text(item.body)
-                    .font(.callout)
+                    .font(NocciType.body(scale))
                     .fixedSize(horizontal: false, vertical: true)
             }
         }

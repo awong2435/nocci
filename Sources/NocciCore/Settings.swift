@@ -11,6 +11,12 @@ public enum SettingsKey {
     public static let indicatorStyle = "indicatorStyle"
     public static let indicatorSide = "indicatorSide"
     public static let screenChoice = "screenChoice"
+    /// Multiplier for text in alerts and the list.
+    public static let fontScale = "fontScale"
+    /// Array of plugin IDs, in the order their sections appear in the island.
+    public static let pluginOrder = "pluginOrder"
+    /// Array of IDs of the plugins that are turned on.
+    public static let enabledPlugins = "enabledPlugins"
     /// Dictionary of app bundle ID to Bool.
     public static let enabledApps = "enabledApps"
 
@@ -86,6 +92,10 @@ public enum ScreenChoice: Hashable, Sendable, RawRepresentable {
 public final class NocciSettings {
     public static let widthRange: ClosedRange<Double> = 360...900
     public static let defaultWidth: Double = 560
+    public static let fontScaleRange: ClosedRange<Double> = 0.8...1.4
+    /// Plugin IDs in their default order. Media is off by default; it asks for permissions when used.
+    public static let defaultPluginOrder = ["media", "notifications"]
+    public static let defaultEnabledPlugins: Set<String> = ["notifications"]
 
     @ObservationIgnored private let defaults: UserDefaults
 
@@ -112,6 +122,17 @@ public final class NocciSettings {
     public var hoverCloseDelay: Double {
         didSet { defaults.set(hoverCloseDelay, forKey: SettingsKey.hoverCloseDelay) }
     }
+    /// Text size multiplier, shared by alerts and the list so they always match.
+    public var fontScale: Double {
+        didSet { defaults.set(fontScale, forKey: SettingsKey.fontScale) }
+    }
+    /// Every known plugin ID, in the order their sections appear when the island opens.
+    public var pluginOrder: [String] {
+        didSet { defaults.set(pluginOrder, forKey: SettingsKey.pluginOrder) }
+    }
+    public var enabledPlugins: Set<String> {
+        didSet { defaults.set(Array(enabledPlugins).sorted(), forKey: SettingsKey.enabledPlugins) }
+    }
 
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -123,6 +144,25 @@ public final class NocciSettings {
         screenChoice = defaults.string(forKey: SettingsKey.screenChoice).flatMap(ScreenChoice.init(rawValue:)) ?? .notched
         hoverOpenDelay = defaults.object(forKey: SettingsKey.hoverOpenDelay) as? Double ?? 0.2
         hoverCloseDelay = defaults.object(forKey: SettingsKey.hoverCloseDelay) as? Double ?? 0.4
+        let scale = defaults.object(forKey: SettingsKey.fontScale) as? Double ?? 1
+        fontScale = min(max(scale, Self.fontScaleRange.lowerBound), Self.fontScaleRange.upperBound)
+        pluginOrder = Self.completeOrder(defaults.stringArray(forKey: SettingsKey.pluginOrder) ?? [])
+        enabledPlugins = defaults.stringArray(forKey: SettingsKey.enabledPlugins).map(Set.init) ?? Self.defaultEnabledPlugins
+    }
+
+    /// A saved order with any plugins added since it was saved appended at the end, and unknown IDs dropped.
+    static func completeOrder(_ saved: [String]) -> [String] {
+        let known = saved.filter(Self.defaultPluginOrder.contains)
+        return known + Self.defaultPluginOrder.filter { !known.contains($0) }
+    }
+
+    /// Plugin IDs that are turned on, in display order.
+    public var activePlugins: [String] {
+        pluginOrder.filter(enabledPlugins.contains)
+    }
+
+    public func setPlugin(_ id: String, enabled: Bool) {
+        if enabled { enabledPlugins.insert(id) } else { enabledPlugins.remove(id) }
     }
 
     /// Puts every setting back to its default.
@@ -134,5 +174,8 @@ public final class NocciSettings {
         screenChoice = .notched
         hoverOpenDelay = 0.2
         hoverCloseDelay = 0.4
+        fontScale = 1
+        pluginOrder = Self.defaultPluginOrder
+        enabledPlugins = Self.defaultEnabledPlugins
     }
 }

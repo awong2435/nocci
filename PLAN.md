@@ -1,3 +1,5 @@
+> **Scope change (2026-10-29):** the user asked for a plugin system and a media plugin. The core stays notifications-only; extras are optional compiled-in plugins (`NocciPlugin`), toggled and ordered in Settings. "Music" is no longer a non-goal for plugins. See CLAUDE.md for the plugin privacy rules.
+>
 > **Renamed (2026-10-29):** the app is now **Nocci** (`Sources/Nocci`, `NocciCore`, bundle ID `local.nocci` as a placeholder). "Tuck" below refers to the same app.
 >
 > **Project note (2026-10-29):** built as a Swift Package with `scripts/build-app.sh` instead of an Xcode project. Xcode is not required. Wherever this plan says `xcodebuild` or "Xcode project file", read `swift build` / `Package.swift`.

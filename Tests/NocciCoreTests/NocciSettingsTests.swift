@@ -61,3 +61,33 @@ struct NocciSettingsTests {
         #expect(NocciSettings(defaults: defaults).panelWidth == 560)
     }
 }
+
+extension NocciSettingsTests {
+    @Test func pluginsDefaultToNotificationsOnly() {
+        let settings = NocciSettings(defaults: defaults)
+        #expect(settings.pluginOrder == ["media", "notifications"])
+        #expect(settings.activePlugins == ["notifications"])
+    }
+
+    @Test func pluginOrderAndToggleAreSaved() {
+        let settings = NocciSettings(defaults: defaults)
+        settings.pluginOrder = ["notifications", "media"]
+        settings.setPlugin("media", enabled: true)
+
+        let reloaded = NocciSettings(defaults: defaults)
+        #expect(reloaded.activePlugins == ["notifications", "media"])
+    }
+
+    @Test func savedOrderGainsNewPluginsAndDropsUnknownOnes() {
+        #expect(NocciSettings.completeOrder(["notifications", "retired"]) == ["notifications", "media"])
+        #expect(NocciSettings.completeOrder([]) == ["media", "notifications"])
+    }
+
+    @Test func fontScaleIsSavedAndClamped() {
+        let settings = NocciSettings(defaults: defaults)
+        settings.fontScale = 1.2
+        #expect(NocciSettings(defaults: defaults).fontScale == 1.2)
+        defaults.set(9.0, forKey: SettingsKey.fontScale)
+        #expect(NocciSettings(defaults: defaults).fontScale == NocciSettings.fontScaleRange.upperBound)
+    }
+}

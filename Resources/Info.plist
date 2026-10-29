@@ -24,6 +24,8 @@
 	<string>14.0</string>
 	<key>LSUIElement</key>
 	<true/>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Nocci shows what Music or Spotify is playing and controls playback from the notch. It never shares this information.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 </dict>

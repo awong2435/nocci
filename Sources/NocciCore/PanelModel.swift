@@ -33,17 +33,17 @@ public final class PanelModel {
         scheduleExpiry(for: item.id)
     }
 
-    /// Opens the full list and marks everything as read.
-    public func openList(now: Date = Date()) {
+    /// Opens the island and, when the notification list is shown in it, marks everything as read.
+    public func openList(marksRead: Bool = true, now: Date = Date()) {
         expiry?.cancel()
-        store.markAllRead(now: now)
+        if marksRead { store.markAllRead(now: now) }
         state = .list
     }
 
-    /// Closes the list. Anything that arrived while it was open was seen, so it's read too.
-    public func closeList(now: Date = Date()) {
+    /// Closes the island. Anything that arrived while the list was showing was seen, so it's read too.
+    public func closeList(marksRead: Bool = true, now: Date = Date()) {
         guard state == .list else { return }
-        store.markAllRead(now: now)
+        if marksRead { store.markAllRead(now: now) }
         state = restingState
     }
 

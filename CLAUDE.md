@@ -1,12 +1,15 @@
 # Nocci
 
-A small macOS menu bar app that shows notifications in the notch: an alert card that drops down, then an unread counter, then a hover list. Full plan in `PLAN.md`.
+A small macOS menu bar app that shows notifications in the notch as a Dynamic Island: an alert that grows out of the notch, an unread light beside it, and the full list on hover. Full plan in `PLAN.md`.
 
-## Non-goals
-No music, files, clipboard, calendar, HUDs, lyrics, AirDrop, VPN, timers, widgets, or any other feature outside `PLAN.md`.
+## Scope
+- The core is notifications only.
+- Anything else is an optional plugin: compiled in under `Sources/Nocci/Plugins/`, conforming to `NocciPlugin`, turned on/off and ordered in Settings. Media (`Plugins/Media`) is the only one so far, and it's off by default.
+- No files, clipboard, calendar, HUDs, lyrics, AirDrop, VPN, timers, or widgets unless the user asks for a new plugin.
 
 ## Privacy
-- Read-only, local-only, one permission (Full Disk Access, M2 onward), no network.
+- Read-only, local-only, no network. The core needs one permission (Full Disk Access).
+- Plugins may need more (media: Automation for Music/Spotify, Accessibility for media keys), requested only after the user turns the plugin on and uses it. Plugins follow every rule here: no networking, never log or save personal content (track info included).
 - Open the notification database read-only. Never write to it or copy it.
 - Keep notification text in memory only. Never log it or save it. The only things saved are the "last opened" time and the dismissed IDs.
 - No networking code (`URLSession`, `Network`, sockets).

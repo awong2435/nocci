@@ -126,3 +126,15 @@ extension PanelModelTests {
         #expect(model.state == .hidden)
     }
 }
+
+extension PanelModelTests {
+    @Test func openingWithoutTheListLeavesNotificationsUnread() {
+        let model = model()
+        model.receive(item("a"))
+        model.openList(marksRead: false)
+        #expect(model.state == .list)
+        #expect(model.store.unreadCount == 1)
+        model.closeList(marksRead: false)
+        #expect(model.state == .counter)
+    }
+}
