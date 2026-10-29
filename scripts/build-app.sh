@@ -14,6 +14,8 @@ rm -rf "$app"
 mkdir -p "$app/Contents/MacOS"
 cp "$bin_dir/Tuck" "$app/Contents/MacOS/Tuck"
 cp Resources/Info.plist "$app/Contents/Info.plist"
+mkdir -p "$app/Contents/Resources"
+cp Resources/AppIcon.icns "$app/Contents/Resources/AppIcon.icns"
 
 # Sign with a stable identity so Full Disk Access survives rebuilds: TUCK_SIGN_IDENTITY if set,
 # otherwise the first "Apple Development" certificate in the keychain, otherwise ad-hoc.
