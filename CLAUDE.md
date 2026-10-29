@@ -23,7 +23,8 @@ Adding any permission or entitlement, adding any dependency, touching anything t
 No Xcode project. A Swift Package, macOS 14+, no dependencies.
 - `swift build`: compile
 - `swift test`: unit tests (Swift Testing)
-- `scripts/build-app.sh`: build and wrap into `build/Nocci.app` (see Signing below)
+- `scripts/build-app.sh`: universal release build into `build/Nocci.app` (see Signing below); `scripts/build-app.sh debug` for a quicker debug build with the debug-only tools (`--render-media`)
+- `scripts/release.sh`: signed, notarized release zip; see `RELEASING.md`
 - `open build/Nocci.app`: run
 
 Use Xcode's toolchain: with only the Command Line Tools selected, incremental `swift test` fails with "plugin for module 'TestingMacros' not found". Either `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` once, or prefix commands with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`.
