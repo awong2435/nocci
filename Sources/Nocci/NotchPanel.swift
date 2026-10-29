@@ -19,6 +19,8 @@ final class NotchPanel: NSPanel {
         hidesOnDeactivate = false
         isMovable = false
         isReleasedWhenClosed = false
+        // No system zoom or fade when ordering in or out; the island's own morph is the only animation.
+        animationBehavior = .none
     }
 
     override var canBecomeKey: Bool { false }

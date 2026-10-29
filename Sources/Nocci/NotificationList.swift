@@ -2,6 +2,7 @@ import SwiftUI
 import NocciCore
 
 /// The full list: every visible notification grouped by app, newest first, with full text.
+/// Drawn inside the island shape, which supplies the black background.
 struct NotificationList: View {
     let store: NotificationStore
     /// Height of the notch, or 0 on screens without one. Content starts below it.
@@ -19,7 +20,6 @@ struct NotificationList: View {
         }
         .padding(.top, notchHeight + 8)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.black, in: UnevenRoundedRectangle(bottomLeadingRadius: 18, bottomTrailingRadius: 18))
     }
 
     private var content: some View {

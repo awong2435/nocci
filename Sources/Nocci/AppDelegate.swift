@@ -39,6 +39,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         startListening()
     }
 
+    /// Nocci's panel shouldn't activate the app. Logged to diagnose clicks that do.
+    func applicationDidBecomeActive(_ notification: Notification) {
+        log.notice("app became active")
+    }
+
     /// Saves the last-opened time and dismissed IDs whenever they change. Never message text.
     private func saveReadStateOnChange() {
         let store = model.store

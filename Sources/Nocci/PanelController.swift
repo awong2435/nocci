@@ -6,21 +6,51 @@ import NocciCore
 
 private let log = Logger(subsystem: "local.nocci", category: "panel")
 
-/// What the SwiftUI view is showing right now. Changed only after the panel is framed, so animations line up.
+/// What the island shows. `size` and `bottomRadius` animate; content is laid out at its final size.
 @MainActor
 @Observable
 final class PanelPresentation {
     enum Content: Equatable {
-        case alert(item: NotificationItem, notchHeight: CGFloat, scrolls: Bool)
-        case counter
-        case list(notchHeight: CGFloat)
+        case alert(item: NotificationItem, scrolls: Bool, layoutSize: CGSize)
+        case counter(layoutSize: CGSize)
+        case list(layoutSize: CGSize)
 
-        var isAlert: Bool {
-            if case .alert = self { true } else { false }
+        /// The size the content lays out at: the island's final size, so text doesn't reflow while it grows.
+        var layoutSize: CGSize {
+            switch self {
+            case .alert(_, _, let size), .counter(let size), .list(let size): size
+            }
+        }
+
+        /// The window's size: the island, plus room beside the notch for the unread light.
+        var windowSize: CGSize {
+            switch self {
+            case .counter(let size):
+                CGSize(width: size.width + 2 * CounterBadge.sideRoom, height: max(size.height, CounterBadge.topInset + CounterBadge.diameter + 4))
+            case .alert, .list:
+                layoutSize
+            }
+        }
+
+        var isCounter: Bool {
+            if case .counter = self { true } else { false }
+        }
+
+        /// Changes when the content should cross-fade. A different alert counts as different content.
+        var identity: String {
+            switch self {
+            case .alert(let item, _, _): "alert-\(item.id)"
+            case .counter: "counter"
+            case .list: "list"
+            }
         }
     }
 
     var content: Content?
+    /// Island size, including the ears and the part behind the notch.
+    var size: CGSize = .zero
+    var bottomRadius: CGFloat = 8
+    var notchHeight: CGFloat = 0
 }
 
 /// Turns `PanelModel.state` into the notch panel's frame, visibility, and animation.
@@ -28,6 +58,8 @@ final class PanelPresentation {
 final class PanelController: NSObject {
     /// Default alert width (PLAN.md: about 500 to 600 points). M6 makes it adjustable.
     static let alertWidth: CGFloat = 560
+    /// Width of the concave ears at the island's top corners.
+    static let ear: CGFloat = 6
 
     private let model: PanelModel
     private let panel = NotchPanel()
@@ -43,8 +75,8 @@ final class PanelController: NSObject {
         let hostingView = NSHostingView(rootView: NotchRootView(
             presentation: presentation,
             store: model.store,
-            onTapAlert: { [weak model] in model?.dismissAlert() },
-            onTapCounter: { [weak model] in model?.openList() }
+            ear: Self.ear,
+            onTapAlert: { [weak model] in model?.dismissAlert() }
         ))
         // The panel decides its size; the SwiftUI view just fills it.
         hostingView.sizingOptions = []
@@ -113,16 +145,16 @@ final class PanelController: NSObject {
     private func update(logAlert: Bool = true) {
         guard let screen = NSScreen.nocciTarget else { return }
         let geometry = screen.notchGeometry
+        let notchHeight = geometry.notchSize.height
+        let wideWidth = Self.alertWidth + 2 * Self.ear
 
         switch model.state {
         case .alert:
-            guard let item = model.currentAlert else { return present(nil, frame: nil) }
-            let notchHeight = geometry.notchSize.height
+            guard let item = model.currentAlert else { return morph(to: nil, geometry: geometry) }
             let maxHeight = min(screen.frame.height * 0.6, 520)
             let naturalHeight = AlertCard.naturalHeight(of: item, width: Self.alertWidth, notchHeight: notchHeight)
-            let height = min(naturalHeight, maxHeight)
-            let frame = geometry.panelFrame(contentSize: CGSize(width: Self.alertWidth, height: height - notchHeight))
-            present(.alert(item: item, notchHeight: notchHeight, scrolls: naturalHeight > maxHeight), frame: frame)
+            let size = CGSize(width: wideWidth, height: min(naturalHeight, maxHeight))
+            morph(to: .alert(item: item, scrolls: naturalHeight > maxHeight, layoutSize: size), radius: 22, geometry: geometry)
 
             // ID and latency only; never notification text.
             guard logAlert else { return }
@@ -131,90 +163,124 @@ final class PanelController: NSObject {
 
         case .counter:
             // Stay out of the way over full-screen apps, where the menu bar area is plain black.
-            guard !FullScreenDetector.isFullScreenAppShowing(on: screen) else { return present(nil, frame: nil) }
-            let width = geometry.hasNotch ? geometry.notchSize.width : CounterBadge.pillWidth
-            present(.counter, frame: geometry.panelFrame(contentSize: CGSize(width: width, height: CounterBadge.lipHeight)))
+            guard !FullScreenDetector.isFullScreenAppShowing(on: screen) else { return morph(to: nil, geometry: geometry) }
+            // The island tucks back behind the notch; the light sits beside it.
+            morph(to: .counter(layoutSize: restingSize(geometry)), geometry: geometry)
 
         case .list:
-            let notchHeight = geometry.notchSize.height
             let maxHeight = min(screen.frame.height * 0.75, 700)
             let naturalHeight = NotificationList.naturalHeight(of: model.store, width: Self.alertWidth, notchHeight: notchHeight)
-            let height = min(naturalHeight, maxHeight)
-            present(.list(notchHeight: notchHeight), frame: geometry.panelFrame(contentSize: CGSize(width: Self.alertWidth, height: height - notchHeight)))
+            morph(to: .list(layoutSize: CGSize(width: wideWidth, height: min(naturalHeight, maxHeight))), radius: 22, geometry: geometry)
 
         case .hidden:
-            present(nil, frame: nil)
+            morph(to: nil, geometry: geometry)
         }
     }
 
-    /// Shows `content` in a panel at `frame`, animating out whatever was there.
-    /// Alert-to-alert swaps in place; any other change animates the old content out first, then resizes.
-    private func present(_ content: PanelPresentation.Content?, frame: CGRect?) {
+    /// The island at rest: the size of the notch, so it disappears behind it. On screens without a notch, a flat line.
+    private func restingSize(_ geometry: NotchGeometry) -> CGSize {
+        geometry.hasNotch ? geometry.notchSize : CGSize(width: CounterBadge.pillWidth + 2 * Self.ear, height: 0)
+    }
+
+    /// Animates the island from its current shape to `content`'s size, or back into the notch when `content` is nil.
+    ///
+    /// The window grows to fit both shapes before the animation and shrinks to the final shape after it, so it's
+    /// only bigger than what's visible while animating and doesn't sit over clicks meant for other apps.
+    private func morph(to content: PanelPresentation.Content?, radius: CGFloat = 8, geometry: NotchGeometry) {
         generation += 1
-        let current = presentation.content
-
-        guard let content, let frame else {
-            guard current != nil else { return panel.orderOut(nil) }
-            animateOut(then: { [weak self] in self?.panel.orderOut(nil) })
-            return
-        }
-
-        if current == nil || (current?.isAlert == true && content.isAlert) {
-            animateIn(content, frame: frame)
-        } else if current != content {
-            animateOut(then: { [weak self] in self?.animateIn(content, frame: frame) })
-        }
-    }
-
-    private func animateIn(_ content: PanelPresentation.Content, frame: CGRect) {
-        panel.setFrame(frame, display: false)
-        panel.orderFrontRegardless()
-        withAnimation(.spring(duration: 0.35, bounce: 0.15)) {
-            presentation.content = content
-        }
-    }
-
-    private func animateOut(then next: @escaping @MainActor () -> Void) {
         let started = generation
-        withAnimation(.easeIn(duration: 0.2)) {
+        guard content != nil || panel.isVisible else { return }
+
+        let resting = restingSize(geometry)
+        if !panel.isVisible {
+            // Start from the notch.
+            presentation.size = resting
+            presentation.bottomRadius = 8
             presentation.content = nil
+        }
+        presentation.notchHeight = geometry.notchSize.height
+
+        let target = content?.layoutSize ?? resting
+        let targetWindow = content?.windowSize ?? resting
+        let current = panel.isVisible ? panel.frame.size : resting
+        let canvas = CGSize(width: max(current.width, targetWindow.width), height: max(current.height, targetWindow.height))
+        panel.setFrame(frame(for: canvas, geometry), display: false)
+        // The light is only an indicator; let clicks beside the notch reach the menu bar. Hover still opens the list.
+        panel.ignoresMouseEvents = content?.isCounter ?? false
+        panel.orderFrontRegardless()
+
+        withAnimation(.spring(duration: 0.45, bounce: 0.22)) {
+            presentation.size = target
+            presentation.bottomRadius = content == nil ? 8 : radius
+            presentation.content = content
         } completion: { [weak self] in
             // Skip if a newer update arrived during the animation; it has already taken over.
             guard let self, generation == started else { return }
-            next()
+            if content == nil {
+                panel.orderOut(nil)
+            } else {
+                panel.setFrame(frame(for: targetWindow, geometry), display: true)
+            }
         }
+    }
+
+    /// Window frame for an island of `size`, centered on the notch and flush with the top edge.
+    private func frame(for size: CGSize, _ geometry: NotchGeometry) -> CGRect {
+        geometry.panelFrame(contentSize: CGSize(width: size.width, height: max(0, size.height - geometry.notchSize.height)))
     }
 }
 
-/// Root SwiftUI view inside the notch panel.
+/// Root SwiftUI view inside the notch panel: one black island shape, with the current content inside it.
 private struct NotchRootView: View {
     let presentation: PanelPresentation
     let store: NotificationStore
+    let ear: CGFloat
     let onTapAlert: () -> Void
-    let onTapCounter: () -> Void
 
     var body: some View {
-        ZStack(alignment: .top) {
-            switch presentation.content {
-            case .alert(let item, let notchHeight, let scrolls):
-                AlertCard(item: item, notchHeight: notchHeight, scrolls: scrolls)
-                    .id(item.id)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                    // Temporary: clicking hides the alert. M7 adds swipe to dismiss, M8 makes click open the app.
-                    .onTapGesture(perform: onTapAlert)
-            case .counter:
-                CounterBadge()
-                    .transition(.opacity)
-                    .onTapGesture(perform: onTapCounter)
-            case .list(let notchHeight):
-                // Always scrollable: notifications that arrive while it's open make it taller than measured.
-                NotificationList(store: store, notchHeight: notchHeight, scrolls: true)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-            case nil:
-                EmptyView()
+        let shape = IslandShape(ear: ear, bottomRadius: presentation.bottomRadius)
+        Color.clear
+            .frame(width: presentation.size.width, height: presentation.size.height)
+            .overlay(alignment: .top) {
+                if let content = presentation.content {
+                    contentView(content)
+                        .padding(.horizontal, ear)
+                        .frame(width: content.layoutSize.width, height: content.layoutSize.height, alignment: .top)
+                        .id(content.identity)
+                        // Content fades in once the island has started growing, and out quickly before it shrinks.
+                        .transition(.asymmetric(
+                            insertion: .opacity.animation(.easeOut(duration: 0.2).delay(0.12)),
+                            removal: .opacity.animation(.easeIn(duration: 0.1))
+                        ))
+                }
             }
+            .background(shape.fill(.black))
+            .clipShape(shape)
+            .overlay(alignment: .topTrailing) {
+                if presentation.content?.isCounter == true {
+                    // Just right of the notch, near the top. The island's ears sit inside the notch at rest.
+                    CounterBadge()
+                        .offset(x: CounterBadge.gap + CounterBadge.diameter, y: CounterBadge.topInset)
+                        .transition(.scale.combined(with: .opacity))
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    @ViewBuilder
+    private func contentView(_ content: PanelPresentation.Content) -> some View {
+        switch content {
+        case .alert(let item, let scrolls, _):
+            AlertCard(item: item, notchHeight: presentation.notchHeight, scrolls: scrolls)
+                // Temporary: clicking hides the alert. M7 adds swipe to dismiss, M8 makes click open the app.
+                .onTapGesture(perform: onTapAlert)
+        case .counter:
+            // Drawn as an overlay outside the island; see body.
+            EmptyView()
+        case .list:
+            // Always scrollable: notifications that arrive while it's open make it taller than measured.
+            NotificationList(store: store, notchHeight: presentation.notchHeight, scrolls: true)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 }
 

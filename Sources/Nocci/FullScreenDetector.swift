@@ -1,10 +1,12 @@
 import AppKit
 
-/// Detects whether a full-screen app owns a screen, by checking whether that screen's menu bar is showing.
+/// Detects whether a full-screen app owns a screen.
 ///
-/// A maximized window covers the same area as a full-screen one on a notched Mac, so window sizes can't tell
-/// them apart; the menu bar window can. Uses window bounds only, which need no permission.
-/// Caveat: with "Automatically hide and show the menu bar" set to Always, this reports full screen everywhere.
+/// Every regular space shows that screen's wallpaper (a Dock-owned window covering the whole screen, listed as
+/// on screen even when other windows hide it); a full-screen app's space doesn't. Window sizes alone can't tell,
+/// since a maximized window covers the same area as a full-screen one on a notched Mac, and the menu bar window
+/// isn't reliable either: macOS drops it from screens you aren't currently using.
+/// Uses window bounds and owners only, which need no permission.
 enum FullScreenDetector {
     static func isFullScreenAppShowing(on screen: NSScreen) -> Bool {
         guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]],
@@ -12,22 +14,21 @@ enum FullScreenDetector {
         else { return false }
 
         // Window bounds use a top-left origin measured from the primary screen.
-        let screenTop = CGRect(
+        let screenRect = CGRect(
             x: screen.frame.minX,
             y: primaryHeight - screen.frame.maxY,
             width: screen.frame.width,
-            height: 1
+            height: screen.frame.height
         )
-        let menuBarLevel = Int(CGWindowLevelForKey(.mainMenuWindow))
 
-        let menuBarShowing = windows.contains { window in
-            guard window[kCGWindowLayer as String] as? Int == menuBarLevel,
-                  window[kCGWindowOwnerName as String] as? String == "Window Server",
+        let wallpaperShowing = windows.contains { window in
+            guard window[kCGWindowOwnerName as String] as? String == "Dock",
+                  let layer = window[kCGWindowLayer as String] as? Int, layer < 0,
                   let bounds = (window[kCGWindowBounds as String] as? NSDictionary)
                       .flatMap({ CGRect(dictionaryRepresentation: $0 as CFDictionary) })
             else { return false }
-            return bounds.intersects(screenTop)
+            return bounds.integral == screenRect.integral
         }
-        return !menuBarShowing
+        return !wallpaperShowing
     }
 }

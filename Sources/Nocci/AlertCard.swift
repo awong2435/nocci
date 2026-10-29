@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 import NocciCore
 
-/// One notification as a wide black card that hangs from the notch, with the full text.
+/// One notification with its full text. Drawn inside the island shape, which supplies the black background.
 struct AlertCard: View {
     let item: NotificationItem
     /// Height of the notch, or 0 on screens without one. Content starts below it.
@@ -20,7 +20,6 @@ struct AlertCard: View {
         }
         .padding(.top, notchHeight + 10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.black, in: UnevenRoundedRectangle(bottomLeadingRadius: 18, bottomTrailingRadius: 18))
     }
 
     private var content: some View {
