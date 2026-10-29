@@ -34,6 +34,13 @@ public struct NotchGeometry: Equatable, Sendable {
         }
     }
 
+    /// Area at the top edge that reveals the list on hover: the notch itself,
+    /// or a `fallbackSize` strip at the top center on screens without one.
+    public func hotZone(fallbackSize: CGSize) -> CGRect {
+        let size = hasNotch ? notchSize : fallbackSize
+        return CGRect(x: centerX - size.width / 2, y: screenFrame.maxY - size.height, width: size.width, height: size.height)
+    }
+
     /// Panel frame for content shown below the notch, flush with the top edge and centered on the notch.
     /// On a notched screen the panel also covers the notch itself, so it is `notchSize.height` taller.
     public func panelFrame(contentSize: CGSize) -> CGRect {

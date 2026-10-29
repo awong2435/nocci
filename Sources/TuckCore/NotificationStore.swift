@@ -23,6 +23,22 @@ public final class NotificationStore {
         allItems.filter { !dismissedIDs.contains($0.id) }
     }
 
+    /// Visible notifications grouped by app. Groups are ordered by their newest notification,
+    /// and each group's notifications are newest first.
+    public var groupedByApp: [AppGroup] {
+        var groups: [AppGroup] = []
+        var index: [String: Int] = [:]
+        for item in items {
+            if let i = index[item.appBundleID] {
+                groups[i].items.append(item)
+            } else {
+                index[item.appBundleID] = groups.count
+                groups.append(AppGroup(appBundleID: item.appBundleID, appName: item.appName, items: [item]))
+            }
+        }
+        return groups
+    }
+
     public var unreadCount: Int {
         items.filter { item in lastOpened.map { item.date > $0 } ?? true }.count
     }
@@ -43,4 +59,12 @@ public final class NotificationStore {
     public func dismiss(id: NotificationItem.ID) {
         dismissedIDs.insert(id)
     }
+}
+
+/// One app's notifications in the list.
+public struct AppGroup: Identifiable, Sendable {
+    public var id: String { appBundleID }
+    public let appBundleID: String
+    public let appName: String
+    public var items: [NotificationItem]
 }

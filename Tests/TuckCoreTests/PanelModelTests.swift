@@ -100,3 +100,29 @@ struct PanelModelTests {
         #expect(model.state == .counter)
     }
 }
+
+extension PanelModelTests {
+    @Test func openingTheListMarksEverythingRead() {
+        let model = model()
+        model.receive(item("a"))
+        model.openList()
+        #expect(model.state == .list)
+        #expect(model.store.unreadCount == 0)
+    }
+
+    @Test func notificationsWhileTheListIsOpenDontAlert() {
+        let model = model()
+        model.openList()
+        model.receive(item("a"))
+        #expect(model.state == .list)
+        #expect(model.store.items.map(\.id) == ["a"])
+    }
+
+    @Test func closingTheListHidesWhenEverythingIsRead() {
+        let model = model()
+        model.openList()
+        model.receive(item("a"))
+        model.closeList(now: Date().addingTimeInterval(1))
+        #expect(model.state == .hidden)
+    }
+}

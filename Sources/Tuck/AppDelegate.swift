@@ -1,4 +1,5 @@
 import AppKit
+import Observation
 import OSLog
 import TuckCore
 
@@ -34,7 +35,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
         panelController = PanelController(model: model)
         setUpStatusItem()
+        saveReadStateOnChange()
         startListening()
+    }
+
+    /// Saves the last-opened time and dismissed IDs whenever they change. Never message text.
+    private func saveReadStateOnChange() {
+        let store = model.store
+        withObservationTracking {
+            _ = store.lastOpened
+            _ = store.dismissedIDs
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                UserDefaults.standard.set(store.lastOpened, forKey: SettingsKey.lastOpened)
+                UserDefaults.standard.set(Array(store.dismissedIDs), forKey: SettingsKey.dismissedIDs)
+                self?.saveReadStateOnChange()
+            }
+        }
     }
 
     /// Loads existing notifications without alerting, then alerts on each new one.

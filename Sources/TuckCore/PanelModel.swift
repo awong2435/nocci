@@ -27,9 +27,24 @@ public final class PanelModel {
     public func receive(_ item: NotificationItem) {
         let isNew = !store.allItems.contains { $0.id == item.id }
         store.ingest([item])
-        guard isNew, !store.dismissedIDs.contains(item.id) else { return }
+        // While the list is open, new notifications just appear in it.
+        guard isNew, !store.dismissedIDs.contains(item.id), state != .list else { return }
         state = .alert(item.id)
         scheduleExpiry(for: item.id)
+    }
+
+    /// Opens the full list and marks everything as read.
+    public func openList(now: Date = Date()) {
+        expiry?.cancel()
+        store.markAllRead(now: now)
+        state = .list
+    }
+
+    /// Closes the list. Anything that arrived while it was open was seen, so it's read too.
+    public func closeList(now: Date = Date()) {
+        guard state == .list else { return }
+        store.markAllRead(now: now)
+        state = restingState
     }
 
     /// Ends the alert for `id`, if it's still the one showing, and collapses to the counter.

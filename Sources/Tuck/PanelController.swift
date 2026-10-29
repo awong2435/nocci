@@ -13,6 +13,7 @@ final class PanelPresentation {
     enum Content: Equatable {
         case alert(item: NotificationItem, notchHeight: CGFloat, scrolls: Bool)
         case counter
+        case list(notchHeight: CGFloat)
 
         var isAlert: Bool {
             if case .alert = self { true } else { false }
@@ -33,17 +34,33 @@ final class PanelController: NSObject {
     private let presentation = PanelPresentation()
     /// Bumped on every update so a finishing animation can tell it's been superseded.
     private var generation = 0
+    private var hoverTracker: HoverTracker?
 
     init(model: PanelModel) {
         self.model = model
         super.init()
 
-        let hostingView = NSHostingView(rootView: NotchRootView(presentation: presentation) { [weak model] in
-            model?.dismissAlert()
-        })
+        let hostingView = NSHostingView(rootView: NotchRootView(
+            presentation: presentation,
+            store: model.store,
+            onTapAlert: { [weak model] in model?.dismissAlert() },
+            onTapCounter: { [weak model] in model?.openList() }
+        ))
         // The panel decides its size; the SwiftUI view just fills it.
         hostingView.sizingOptions = []
         panel.contentView = hostingView
+        // So the local mouse monitor sees movement over the panel itself.
+        panel.acceptsMouseMovedEvents = true
+
+        hoverTracker = HoverTracker(
+            decide: { [weak self] point in self?.hoverAction(at: point) },
+            perform: { [weak model] action in
+                switch action {
+                case .open: model?.openList()
+                case .close: model?.closeList()
+                }
+            }
+        )
 
         trackState()
         NotificationCenter.default.addObserver(
@@ -66,6 +83,26 @@ final class PanelController: NSObject {
                 self?.update()
                 self?.trackState()
             }
+        }
+    }
+
+    /// Hovering the notch opens the list (as does the counter, which sits just below it).
+    /// Once open, the list stays while the mouse is over the notch or the panel.
+    private func hoverAction(at point: NSPoint) -> HoverTracker.Action? {
+        guard let screen = NSScreen.tuckTarget else { return nil }
+        // One extra point upward so the very top pixel row counts.
+        let hotZone = screen.notchGeometry
+            .hotZone(fallbackSize: CGSize(width: 200, height: NSStatusBar.system.thickness))
+            .insetBy(dx: 0, dy: -1)
+        let overPanel = panel.isVisible && panel.frame.contains(point)
+
+        switch model.state {
+        case .list:
+            return hotZone.contains(point) || overPanel ? nil : .close
+        case .counter:
+            return hotZone.contains(point) || overPanel ? .open : nil
+        case .hidden, .alert:
+            return hotZone.contains(point) ? .open : nil
         }
     }
 
@@ -98,7 +135,14 @@ final class PanelController: NSObject {
             let width = geometry.hasNotch ? geometry.notchSize.width : CounterBadge.pillWidth
             present(.counter, frame: geometry.panelFrame(contentSize: CGSize(width: width, height: CounterBadge.lipHeight)))
 
-        case .hidden, .list:
+        case .list:
+            let notchHeight = geometry.notchSize.height
+            let maxHeight = min(screen.frame.height * 0.75, 700)
+            let naturalHeight = NotificationList.naturalHeight(of: model.store, width: Self.alertWidth, notchHeight: notchHeight)
+            let height = min(naturalHeight, maxHeight)
+            present(.list(notchHeight: notchHeight), frame: geometry.panelFrame(contentSize: CGSize(width: Self.alertWidth, height: height - notchHeight)))
+
+        case .hidden:
             present(nil, frame: nil)
         }
     }
@@ -145,7 +189,9 @@ final class PanelController: NSObject {
 /// Root SwiftUI view inside the notch panel.
 private struct NotchRootView: View {
     let presentation: PanelPresentation
+    let store: NotificationStore
     let onTapAlert: () -> Void
+    let onTapCounter: () -> Void
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -159,6 +205,11 @@ private struct NotchRootView: View {
             case .counter:
                 CounterBadge()
                     .transition(.opacity)
+                    .onTapGesture(perform: onTapCounter)
+            case .list(let notchHeight):
+                // Always scrollable: notifications that arrive while it's open make it taller than measured.
+                NotificationList(store: store, notchHeight: notchHeight, scrolls: true)
+                    .transition(.move(edge: .top).combined(with: .opacity))
             case nil:
                 EmptyView()
             }

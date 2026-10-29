@@ -35,3 +35,13 @@ struct NotchGeometryTests {
         #expect(frame == CGRect(x: -1830, y: 2368, width: 220, height: 28))
     }
 }
+
+extension NotchGeometryTests {
+    @Test func hotZoneIsTheNotchOrAFallbackStrip() {
+        let notched = NotchGeometry(screenFrame: CGRect(x: 0, y: 0, width: 1470, height: 956), safeAreaTop: 32, auxiliaryLeftWidth: 642.5, auxiliaryRightWidth: 642.5)
+        #expect(notched.hotZone(fallbackSize: CGSize(width: 200, height: 24)) == CGRect(x: 642.5, y: 924, width: 185, height: 32))
+
+        let plain = NotchGeometry(screenFrame: CGRect(x: 0, y: 0, width: 1000, height: 800), safeAreaTop: 0, auxiliaryLeftWidth: nil, auxiliaryRightWidth: nil)
+        #expect(plain.hotZone(fallbackSize: CGSize(width: 200, height: 24)) == CGRect(x: 400, y: 776, width: 200, height: 24))
+    }
+}

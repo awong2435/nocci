@@ -48,3 +48,18 @@ struct NotificationStoreTests {
         #expect(store.unreadCount == 0)
     }
 }
+
+extension NotificationStoreTests {
+    @Test func groupsByAppNewestFirst() {
+        let store = NotificationStore()
+        func item(_ id: String, _ app: String, at offset: TimeInterval) -> NotificationItem {
+            NotificationItem(id: id, appBundleID: app, appName: app, title: id, body: "", date: t0.addingTimeInterval(offset))
+        }
+        store.ingest([item("s1", "slack", at: 0), item("m1", "mail", at: 10), item("s2", "slack", at: 20), item("m2", "mail", at: 5)])
+        store.dismiss(id: "m2")
+        let groups = store.groupedByApp
+        #expect(groups.map(\.appBundleID) == ["slack", "mail"])
+        #expect(groups[0].items.map(\.id) == ["s2", "s1"])
+        #expect(groups[1].items.map(\.id) == ["m1"])
+    }
+}
