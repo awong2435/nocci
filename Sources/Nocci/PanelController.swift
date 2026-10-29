@@ -101,10 +101,6 @@ final class PanelController: NSObject {
             name: NSApplication.didChangeScreenParametersNotification,
             object: nil
         )
-        // Entering or leaving a full-screen app changes the active space or the frontmost app.
-        for name in [NSWorkspace.activeSpaceDidChangeNotification, NSWorkspace.didActivateApplicationNotification] {
-            NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(screensChanged), name: name, object: nil)
-        }
     }
 
     private func trackState() {
@@ -162,8 +158,6 @@ final class PanelController: NSObject {
             log.notice("alert id=\(item.id, privacy: .public) app=\(item.appBundleID, privacy: .public) latency=\(latency, format: .fixed(precision: 2), privacy: .public)s")
 
         case .counter:
-            // Stay out of the way over full-screen apps, where the menu bar area is plain black.
-            guard !FullScreenDetector.isFullScreenAppShowing(on: screen) else { return morph(to: nil, geometry: geometry) }
             // The island tucks back behind the notch; the light sits beside it.
             morph(to: .counter(layoutSize: restingSize(geometry)), geometry: geometry)
 
