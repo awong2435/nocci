@@ -46,6 +46,23 @@ struct PanelModelTests {
         model.expireAlert(id: "a")
         #expect(model.state == .alert("b"))
         model.expireAlert(id: "b")
+        #expect(model.state == .counter)
+    }
+
+    @Test func expiredAlertCollapsesToTheCounter() {
+        let model = model()
+        model.receive(item("a"))
+        model.receive(item("b"))
+        model.dismissAlert()
+        #expect(model.state == .counter)
+        #expect(model.store.unreadCount == 2)
+    }
+
+    @Test func expiredAlertHidesWhenNothingIsUnread() {
+        // Opened after the notification arrived, so it's already read.
+        let model = PanelModel(store: NotificationStore(lastOpened: .distantFuture), alertDuration: .untilDismissed)
+        model.receive(item("a"))
+        model.dismissAlert()
         #expect(model.state == .hidden)
     }
 
@@ -53,7 +70,7 @@ struct PanelModelTests {
         let model = model()
         model.receive(item("a"))
         model.dismissAlert()
-        #expect(model.state == .hidden)
+        #expect(model.state == .counter)
         #expect(model.store.items.map(\.id) == ["a"])
     }
 
@@ -62,9 +79,9 @@ struct PanelModelTests {
         model.receive(item("a"))
         #expect(model.state == .alert("a"))
         // Allow slack for a busy main actor while other tests run in parallel.
-        for _ in 0..<40 where model.state != .hidden {
+        for _ in 0..<40 where model.state != .counter {
             try await Task.sleep(for: .milliseconds(250))
         }
-        #expect(model.state == .hidden)
+        #expect(model.state == .counter)
     }
 }

@@ -32,12 +32,16 @@ public final class PanelModel {
         scheduleExpiry(for: item.id)
     }
 
-    /// Ends the alert for `id`, if it's still the one showing.
+    /// Ends the alert for `id`, if it's still the one showing, and collapses to the counter.
     public func expireAlert(id: NotificationItem.ID) {
         guard state == .alert(id) else { return }
         expiry?.cancel()
-        // M4: collapse to .counter when there are unread notifications.
-        state = .hidden
+        state = restingState
+    }
+
+    /// Counter when anything is unread, otherwise hidden.
+    private var restingState: PanelState {
+        store.unreadCount > 0 ? .counter : .hidden
     }
 
     /// Hides the current alert now, without dismissing the notification.

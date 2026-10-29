@@ -7,10 +7,23 @@ private let log = Logger(subsystem: "local.tuck", category: "app")
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let model = PanelModel(
-        store: NotificationStore(),
+        store: AppDelegate.restoredStore(),
         alertDuration: UserDefaults.standard.string(forKey: SettingsKey.alertDuration)
             .flatMap(AlertDuration.init(rawValue:)) ?? .tenSeconds
     )
+
+    /// Restores the last-opened time and dismissed IDs. On first launch, everything already in
+    /// Notification Center counts as read, so the counter starts at zero.
+    private static func restoredStore() -> NotificationStore {
+        let defaults = UserDefaults.standard
+        let lastOpened = defaults.object(forKey: SettingsKey.lastOpened) as? Date ?? {
+            let now = Date()
+            defaults.set(now, forKey: SettingsKey.lastOpened)
+            return now
+        }()
+        let dismissed = Set(defaults.stringArray(forKey: SettingsKey.dismissedIDs) ?? [])
+        return NotificationStore(lastOpened: lastOpened, dismissedIDs: dismissed)
+    }
     private var panelController: PanelController?
     private var statusItem: NSStatusItem?
     private let statusLine = NSMenuItem(title: "Starting…", action: nil, keyEquivalent: "")

@@ -10,13 +10,16 @@ private let log = Logger(subsystem: "local.tuck", category: "panel")
 @MainActor
 @Observable
 final class PanelPresentation {
-    struct Alert {
-        let item: NotificationItem
-        let notchHeight: CGFloat
-        let scrolls: Bool
+    enum Content: Equatable {
+        case alert(item: NotificationItem, notchHeight: CGFloat, scrolls: Bool)
+        case counter(notchWidth: CGFloat)
+
+        var isAlert: Bool {
+            if case .alert = self { true } else { false }
+        }
     }
 
-    var alert: Alert?
+    var content: Content?
 }
 
 /// Turns `PanelModel.state` into the notch panel's frame, visibility, and animation.
@@ -28,12 +31,14 @@ final class PanelController: NSObject {
     private let model: PanelModel
     private let panel = NotchPanel()
     private let presentation = PanelPresentation()
+    /// Bumped on every update so a finishing animation can tell it's been superseded.
+    private var generation = 0
 
     init(model: PanelModel) {
         self.model = model
         super.init()
 
-        let hostingView = NSHostingView(rootView: NotchRootView(presentation: presentation) { [weak model] in
+        let hostingView = NSHostingView(rootView: NotchRootView(presentation: presentation, store: model.store) { [weak model] in
             model?.dismissAlert()
         })
         // The panel decides its size; the SwiftUI view just fills it.
@@ -65,44 +70,68 @@ final class PanelController: NSObject {
     }
 
     private func update() {
-        if let item = model.currentAlert {
-            show(item)
-        } else {
-            hide()
-        }
-    }
-
-    private func show(_ item: NotificationItem) {
         guard let screen = NSScreen.tuckTarget else { return }
         let geometry = screen.notchGeometry
-        let notchHeight = geometry.notchSize.height
-        let maxHeight = min(screen.frame.height * 0.6, 520)
-        let naturalHeight = AlertCard.naturalHeight(of: item, width: Self.alertWidth, notchHeight: notchHeight)
-        let height = min(naturalHeight, maxHeight)
 
-        let frame = geometry.panelFrame(contentSize: CGSize(width: Self.alertWidth, height: height - notchHeight))
-        panel.setFrame(frame, display: false)
-        panel.orderFrontRegardless()
+        switch model.state {
+        case .alert:
+            guard let item = model.currentAlert else { return present(nil, frame: nil) }
+            let notchHeight = geometry.notchSize.height
+            let maxHeight = min(screen.frame.height * 0.6, 520)
+            let naturalHeight = AlertCard.naturalHeight(of: item, width: Self.alertWidth, notchHeight: notchHeight)
+            let height = min(naturalHeight, maxHeight)
+            let frame = geometry.panelFrame(contentSize: CGSize(width: Self.alertWidth, height: height - notchHeight))
+            present(.alert(item: item, notchHeight: notchHeight, scrolls: naturalHeight > maxHeight), frame: frame)
 
-        withAnimation(.spring(duration: 0.35, bounce: 0.15)) {
-            presentation.alert = .init(item: item, notchHeight: notchHeight, scrolls: naturalHeight > maxHeight)
+            // ID and latency only; never notification text.
+            let latency = Date().timeIntervalSince(item.date)
+            log.notice("alert id=\(item.id, privacy: .public) app=\(item.appBundleID, privacy: .public) latency=\(latency, format: .fixed(precision: 2), privacy: .public)s")
+
+        case .counter:
+            let width = geometry.notchSize.width + 2 * CounterBadge.wingWidth
+            let height = geometry.hasNotch ? 0 : CounterBadge.pillHeight
+            present(.counter(notchWidth: geometry.notchSize.width), frame: geometry.panelFrame(contentSize: CGSize(width: width, height: height)))
+
+        case .hidden, .list:
+            present(nil, frame: nil)
         }
-        // ID and latency only; never notification text.
-        let latency = Date().timeIntervalSince(item.date)
-        log.notice("alert id=\(item.id, privacy: .public) app=\(item.appBundleID, privacy: .public) latency=\(latency, format: .fixed(precision: 2), privacy: .public)s")
     }
 
-    private func hide() {
-        guard presentation.alert != nil else {
-            panel.orderOut(nil)
+    /// Shows `content` in a panel at `frame`, animating out whatever was there.
+    /// Alert-to-alert swaps in place; any other change animates the old content out first, then resizes.
+    private func present(_ content: PanelPresentation.Content?, frame: CGRect?) {
+        generation += 1
+        let current = presentation.content
+
+        guard let content, let frame else {
+            guard current != nil else { return panel.orderOut(nil) }
+            animateOut(then: { [weak self] in self?.panel.orderOut(nil) })
             return
         }
-        withAnimation(.easeIn(duration: 0.25)) {
-            presentation.alert = nil
+
+        if current == nil || (current?.isAlert == true && content.isAlert) {
+            animateIn(content, frame: frame)
+        } else if current != content {
+            animateOut(then: { [weak self] in self?.animateIn(content, frame: frame) })
+        }
+    }
+
+    private func animateIn(_ content: PanelPresentation.Content, frame: CGRect) {
+        panel.setFrame(frame, display: false)
+        panel.orderFrontRegardless()
+        withAnimation(.spring(duration: 0.35, bounce: 0.15)) {
+            presentation.content = content
+        }
+    }
+
+    private func animateOut(then next: @escaping @MainActor () -> Void) {
+        let started = generation
+        withAnimation(.easeIn(duration: 0.2)) {
+            presentation.content = nil
         } completion: { [weak self] in
-            // A new alert may have arrived during the animation.
-            guard let self, presentation.alert == nil else { return }
-            panel.orderOut(nil)
+            // Skip if a newer update arrived during the animation; it has already taken over.
+            guard let self, generation == started else { return }
+            next()
         }
     }
 }
@@ -110,16 +139,23 @@ final class PanelController: NSObject {
 /// Root SwiftUI view inside the notch panel.
 private struct NotchRootView: View {
     let presentation: PanelPresentation
+    let store: NotificationStore
     let onTapAlert: () -> Void
 
     var body: some View {
         ZStack(alignment: .top) {
-            if let alert = presentation.alert {
-                AlertCard(item: alert.item, notchHeight: alert.notchHeight, scrolls: alert.scrolls)
-                    .id(alert.item.id)
+            switch presentation.content {
+            case .alert(let item, let notchHeight, let scrolls):
+                AlertCard(item: item, notchHeight: notchHeight, scrolls: scrolls)
+                    .id(item.id)
                     .transition(.move(edge: .top).combined(with: .opacity))
                     // Temporary: clicking hides the alert. M7 adds swipe to dismiss, M8 makes click open the app.
                     .onTapGesture(perform: onTapAlert)
+            case .counter(let notchWidth):
+                CounterBadge(count: store.unreadCount, newestAppBundleID: store.items.first?.appBundleID, notchWidth: notchWidth)
+                    .transition(.opacity)
+            case nil:
+                EmptyView()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
