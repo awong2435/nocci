@@ -1,5 +1,5 @@
 import SwiftUI
-import TuckCore
+import NocciCore
 
 /// The full list: every visible notification grouped by app, newest first, with full text.
 struct NotificationList: View {

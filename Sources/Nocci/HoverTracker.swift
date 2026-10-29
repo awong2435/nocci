@@ -1,5 +1,5 @@
 import AppKit
-import TuckCore
+import NocciCore
 
 /// Watches the mouse anywhere on screen and runs open or close after a short delay, so brushing past
 /// the notch doesn't open the list and briefly leaving it doesn't close it.
@@ -21,7 +21,7 @@ final class HoverTracker {
     init(decide: @escaping (NSPoint) -> Action?, perform: @escaping (Action) -> Void) {
         self.decide = decide
         self.perform = perform
-        // Global covers the mouse over other apps; local covers it over Tuck's own panel.
+        // Global covers the mouse over other apps; local covers it over Nocci's own panel.
         let global = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged]) { [weak self] _ in
             self?.mouseMoved()
         }

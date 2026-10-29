@@ -2,9 +2,9 @@ import AppKit
 import Observation
 import OSLog
 import SwiftUI
-import TuckCore
+import NocciCore
 
-private let log = Logger(subsystem: "local.tuck", category: "panel")
+private let log = Logger(subsystem: "local.nocci", category: "panel")
 
 /// What the SwiftUI view is showing right now. Changed only after the panel is framed, so animations line up.
 @MainActor
@@ -89,7 +89,7 @@ final class PanelController: NSObject {
     /// Hovering the notch opens the list (as does the counter, which sits just below it).
     /// Once open, the list stays while the mouse is over the notch or the panel.
     private func hoverAction(at point: NSPoint) -> HoverTracker.Action? {
-        guard let screen = NSScreen.tuckTarget else { return nil }
+        guard let screen = NSScreen.nocciTarget else { return nil }
         // One extra point upward so the very top pixel row counts.
         let hotZone = screen.notchGeometry
             .hotZone(fallbackSize: CGSize(width: 200, height: NSStatusBar.system.thickness))
@@ -111,7 +111,7 @@ final class PanelController: NSObject {
     }
 
     private func update(logAlert: Bool = true) {
-        guard let screen = NSScreen.tuckTarget else { return }
+        guard let screen = NSScreen.nocciTarget else { return }
         let geometry = screen.notchGeometry
 
         switch model.state {
@@ -220,7 +220,7 @@ private struct NotchRootView: View {
 
 extension NSScreen {
     /// The built-in notched screen if there is one, otherwise the menu bar screen.
-    static var tuckTarget: NSScreen? {
+    static var nocciTarget: NSScreen? {
         screens.first { $0.safeAreaInsets.top > 0 } ?? screens.first
     }
 

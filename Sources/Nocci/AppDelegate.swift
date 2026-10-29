@@ -1,9 +1,9 @@
 import AppKit
 import Observation
 import OSLog
-import TuckCore
+import NocciCore
 
-private let log = Logger(subsystem: "local.tuck", category: "app")
+private let log = Logger(subsystem: "local.nocci", category: "app")
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -86,7 +86,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setUpStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        item.button?.image = NSImage(systemSymbolName: "rectangle.topthird.inset.filled", accessibilityDescription: "Tuck")
+        item.button?.image = NSImage(systemSymbolName: "rectangle.topthird.inset.filled", accessibilityDescription: "Nocci")
 
         let menu = NSMenu()
         statusLine.isEnabled = false
@@ -106,7 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(durationItem)
 
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Quit Tuck", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        menu.addItem(withTitle: "Quit Nocci", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         item.menu = menu
         statusItem = item
     }

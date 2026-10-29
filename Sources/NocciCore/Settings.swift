@@ -10,7 +10,7 @@ public enum SettingsKey {
     /// Dictionary of app bundle ID to Bool.
     public static let enabledApps = "enabledApps"
 
-    // State, not settings. The only things Tuck saves about notifications (PLAN.md section 2E).
+    // State, not settings. The only things Nocci saves about notifications (PLAN.md section 2E).
     /// Date the list was last opened.
     public static let lastOpened = "lastOpened"
     /// Array of dismissed notification IDs.

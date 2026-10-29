@@ -1,6 +1,6 @@
 import Foundation
 
-/// One notification as shown by Tuck. Held in memory only; never persisted.
+/// One notification as shown by Nocci. Held in memory only; never persisted.
 public struct NotificationItem: Identifiable, Hashable, Sendable {
     public let id: String
     public let appBundleID: String

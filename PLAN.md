@@ -1,3 +1,5 @@
+> **Renamed (2026-10-29):** the app is now **Nocci** (`Sources/Nocci`, `NocciCore`, bundle ID `local.nocci` as a placeholder). "Tuck" below refers to the same app.
+>
 > **Project note (2026-10-29):** built as a Swift Package with `scripts/build-app.sh` instead of an Xcode project. Xcode is not required. Wherever this plan says `xcodebuild` or "Xcode project file", read `swift build` / `Package.swift`.
 
 # Tuck: build plan v3 (working name)

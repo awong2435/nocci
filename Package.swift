@@ -2,15 +2,15 @@
 import PackageDescription
 
 let package = Package(
-    name: "Tuck",
+    name: "Nocci",
     platforms: [.macOS(.v14)],
     products: [
-        .executable(name: "Tuck", targets: ["Tuck"]),
-        .library(name: "TuckCore", targets: ["TuckCore"]),
+        .executable(name: "Nocci", targets: ["Nocci"]),
+        .library(name: "NocciCore", targets: ["NocciCore"]),
     ],
     targets: [
-        .target(name: "TuckCore"),
-        .executableTarget(name: "Tuck", dependencies: ["TuckCore"]),
-        .testTarget(name: "TuckCoreTests", dependencies: ["TuckCore"]),
+        .target(name: "NocciCore"),
+        .executableTarget(name: "Nocci", dependencies: ["NocciCore"]),
+        .testTarget(name: "NocciCoreTests", dependencies: ["NocciCore"]),
     ]
 )

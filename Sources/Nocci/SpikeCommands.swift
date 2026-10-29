@@ -1,12 +1,12 @@
 import AppKit
-import TuckCore
+import NocciCore
 
 /// M2 spike: one-shot commands that print to stdout and exit instead of showing the panel.
 ///
-/// Run through `open` so macOS attributes Full Disk Access to Tuck rather than to the terminal:
-///   open -n -W --stdout "$(tty)" --stderr "$(tty)" build/Tuck.app --args --db-info
-///   open -n -W --stdout "$(tty)" --stderr "$(tty)" build/Tuck.app --args --db-dates
-///   open -n -W --stdout "$(tty)" --stderr "$(tty)" build/Tuck.app --args --print-recent 10
+/// Run through `open` so macOS attributes Full Disk Access to Nocci rather than to the terminal:
+///   open -n -W --stdout "$(tty)" --stderr "$(tty)" build/Nocci.app --args --db-info
+///   open -n -W --stdout "$(tty)" --stderr "$(tty)" build/Nocci.app --args --db-dates
+///   open -n -W --stdout "$(tty)" --stderr "$(tty)" build/Nocci.app --args --print-recent 10
 enum SpikeCommands {
     /// Runs a spike command if one was passed. Returns `false` to continue launching the app normally.
     static func runIfRequested(_ arguments: [String]) -> Bool {

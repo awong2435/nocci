@@ -276,7 +276,7 @@ public enum DatabaseError: Error, CustomStringConvertible {
     public var description: String {
         switch self {
         case .notFound:
-            "Notification database not found. Tuck probably doesn't have Full Disk Access yet."
+            "Notification database not found. Nocci probably doesn't have Full Disk Access yet."
         case .open(let code):
             "Couldn't open the notification database read-only (SQLite code \(code)). Check Full Disk Access."
         case .query(let code, let message):

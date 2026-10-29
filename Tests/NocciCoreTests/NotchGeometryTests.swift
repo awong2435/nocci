@@ -1,6 +1,6 @@
 import CoreGraphics
 import Testing
-@testable import TuckCore
+@testable import NocciCore
 
 struct NotchGeometryTests {
     @Test func notchedScreenWrapsTheNotch() {

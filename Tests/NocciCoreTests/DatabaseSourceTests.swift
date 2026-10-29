@@ -1,14 +1,14 @@
 import Foundation
 import SQLite3
 import Testing
-@testable import TuckCore
+@testable import NocciCore
 
 /// Runs against a small fake database with the same layout, never the real one.
 struct DatabaseSourceTests {
     let url: URL
 
     init() throws {
-        url = FileManager.default.temporaryDirectory.appending(path: "tuck-fixture-\(UUID().uuidString).db")
+        url = FileManager.default.temporaryDirectory.appending(path: "nocci-fixture-\(UUID().uuidString).db")
         var db: OpaquePointer?
         #expect(sqlite3_open(url.path, &db) == SQLITE_OK)
         defer { sqlite3_close(db) }

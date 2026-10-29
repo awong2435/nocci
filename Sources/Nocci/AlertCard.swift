@@ -1,6 +1,6 @@
 import AppKit
 import SwiftUI
-import TuckCore
+import NocciCore
 
 /// One notification as a wide black card that hangs from the notch, with the full text.
 struct AlertCard: View {

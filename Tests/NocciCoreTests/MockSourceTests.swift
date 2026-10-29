@@ -1,5 +1,5 @@
 import Testing
-@testable import TuckCore
+@testable import NocciCore
 
 struct MockSourceTests {
     @Test func emitsOnItsInterval() async {

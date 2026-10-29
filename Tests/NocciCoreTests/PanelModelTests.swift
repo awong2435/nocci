@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import TuckCore
+@testable import NocciCore
 
 @MainActor
 struct PanelModelTests {
