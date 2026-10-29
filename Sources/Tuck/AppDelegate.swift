@@ -1,74 +1,100 @@
 import AppKit
 import OSLog
-import SwiftUI
 import TuckCore
 
-private let log = Logger(subsystem: "local.tuck", category: "panel")
+private let log = Logger(subsystem: "local.tuck", category: "app")
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private let model = PanelModel(
+        store: NotificationStore(),
+        alertDuration: UserDefaults.standard.string(forKey: SettingsKey.alertDuration)
+            .flatMap(AlertDuration.init(rawValue:)) ?? .tenSeconds
+    )
+    private var panelController: PanelController?
     private var statusItem: NSStatusItem?
-    private let panel = NotchPanel()
-    private let hostingView = NSHostingView(rootView: HelloView(notchHeight: 0))
+    private let statusLine = NSMenuItem(title: "Starting…", action: nil, keyEquivalent: "")
+    private var listenTask: Task<Void, Never>?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Menu bar only, no Dock icon (LSUIElement covers the bundled app; this covers `swift run`).
         NSApp.setActivationPolicy(.accessory)
+        panelController = PanelController(model: model)
         setUpStatusItem()
+        startListening()
+    }
 
-        // Let the panel decide its size; the SwiftUI view just fills it.
-        hostingView.sizingOptions = []
-        panel.contentView = hostingView
-        positionPanel()
-        panel.orderFrontRegardless()
+    /// Loads existing notifications without alerting, then alerts on each new one.
+    /// `--mock` uses fake notifications every 8 seconds instead of the real database.
+    private func startListening() {
+        let source: any NotificationSource
+        if CommandLine.arguments.contains("--mock") {
+            source = MockSource(interval: .seconds(8))
+        } else if let url = DatabaseSource.locate() {
+            source = DatabaseSource(url: url, pollInterval: .seconds(1), appName: AppInfo.name(for:))
+        } else {
+            statusLine.title = "Notification database not found"
+            return
+        }
 
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(screensChanged),
-            name: NSApplication.didChangeScreenParametersNotification,
-            object: nil
-        )
+        listenTask = Task { [model, statusLine] in
+            do {
+                model.store.ingest(try await source.recent(limit: 200))
+                statusLine.title = "Watching notifications"
+            } catch {
+                // DatabaseError descriptions contain codes only, never notification text.
+                log.error("Couldn't read notifications: \(String(describing: error), privacy: .public)")
+                statusLine.title = "No access: grant Full Disk Access, then relaunch"
+                return
+            }
+            for await item in source.newItems() {
+                model.receive(item)
+            }
+        }
     }
 
     private func setUpStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         item.button?.image = NSImage(systemSymbolName: "rectangle.topthird.inset.filled", accessibilityDescription: "Tuck")
+
         let menu = NSMenu()
+        statusLine.isEnabled = false
+        menu.addItem(statusLine)
+        menu.addItem(.separator())
+
+        let durationItem = NSMenuItem(title: "Alert Duration", action: nil, keyEquivalent: "")
+        let durationMenu = NSMenu()
+        for duration in AlertDuration.allCases {
+            let option = NSMenuItem(title: duration.title, action: #selector(chooseDuration(_:)), keyEquivalent: "")
+            option.target = self
+            option.representedObject = duration.rawValue
+            option.state = duration == model.alertDuration ? .on : .off
+            durationMenu.addItem(option)
+        }
+        durationItem.submenu = durationMenu
+        menu.addItem(durationItem)
+
+        menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Tuck", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         item.menu = menu
         statusItem = item
     }
 
-    @objc private func screensChanged() {
-        positionPanel()
-    }
-
-    private func positionPanel() {
-        guard let screen = NSScreen.tuckTarget else { return }
-        let geometry = screen.notchGeometry
-        let contentWidth = geometry.hasNotch ? geometry.notchSize.width + 120 : 220
-        let frame = geometry.panelFrame(contentSize: CGSize(width: contentWidth, height: 28))
-
-        hostingView.rootView = HelloView(notchHeight: geometry.notchSize.height)
-        panel.setFrame(frame, display: true)
-
-        // Geometry only; never notification content.
-        log.notice("screen=\(screen.localizedName, privacy: .public) notch=\(geometry.notchSize.width, privacy: .public)x\(geometry.notchSize.height, privacy: .public) panel=\(NSStringFromRect(frame), privacy: .public)")
+    @objc private func chooseDuration(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let duration = AlertDuration(rawValue: raw) else { return }
+        model.alertDuration = duration
+        UserDefaults.standard.set(raw, forKey: SettingsKey.alertDuration)
+        sender.menu?.items.forEach { $0.state = $0 === sender ? .on : .off }
     }
 }
 
-extension NSScreen {
-    /// The built-in notched screen if there is one, otherwise the menu bar screen.
-    static var tuckTarget: NSScreen? {
-        screens.first { $0.safeAreaInsets.top > 0 } ?? screens.first
-    }
-
-    var notchGeometry: NotchGeometry {
-        NotchGeometry(
-            screenFrame: frame,
-            safeAreaTop: safeAreaInsets.top,
-            auxiliaryLeftWidth: auxiliaryTopLeftArea?.width,
-            auxiliaryRightWidth: auxiliaryTopRightArea?.width
-        )
+private extension AlertDuration {
+    var title: String {
+        switch self {
+        case .fiveSeconds: "5 seconds"
+        case .tenSeconds: "10 seconds"
+        case .thirtySeconds: "30 seconds"
+        case .untilDismissed: "Until dismissed"
+        }
     }
 }

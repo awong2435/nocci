@@ -1,0 +1,58 @@
+import Foundation
+import Observation
+
+/// Decides what the notch panel shows. The app turns `state` into windows and animation.
+@MainActor
+@Observable
+public final class PanelModel {
+    public let store: NotificationStore
+    public private(set) var state: PanelState = .hidden
+    public var alertDuration: AlertDuration
+
+    @ObservationIgnored private var expiry: Task<Void, Never>?
+
+    public init(store: NotificationStore, alertDuration: AlertDuration = .tenSeconds) {
+        self.store = store
+        self.alertDuration = alertDuration
+    }
+
+    /// The notification currently shown as an alert, if any.
+    public var currentAlert: NotificationItem? {
+        guard case .alert(let id) = state else { return nil }
+        return store.items.first { $0.id == id }
+    }
+
+    /// A notification arrived. Shows it as an alert unless it was already known or dismissed.
+    /// A newer notification replaces the current alert and restarts the timer.
+    public func receive(_ item: NotificationItem) {
+        let isNew = !store.allItems.contains { $0.id == item.id }
+        store.ingest([item])
+        guard isNew, !store.dismissedIDs.contains(item.id) else { return }
+        state = .alert(item.id)
+        scheduleExpiry(for: item.id)
+    }
+
+    /// Ends the alert for `id`, if it's still the one showing.
+    public func expireAlert(id: NotificationItem.ID) {
+        guard state == .alert(id) else { return }
+        expiry?.cancel()
+        // M4: collapse to .counter when there are unread notifications.
+        state = .hidden
+    }
+
+    /// Hides the current alert now, without dismissing the notification.
+    public func dismissAlert() {
+        guard case .alert(let id) = state else { return }
+        expireAlert(id: id)
+    }
+
+    private func scheduleExpiry(for id: NotificationItem.ID) {
+        expiry?.cancel()
+        guard let seconds = alertDuration.seconds else { return }
+        expiry = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(seconds))
+            guard !Task.isCancelled else { return }
+            self?.expireAlert(id: id)
+        }
+    }
+}

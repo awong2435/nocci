@@ -78,3 +78,21 @@ struct DatabaseSourceTests {
         await #expect(throws: DatabaseError.self) { try await source.recent(limit: 1) }
     }
 }
+
+extension DatabaseSourceTests {
+    @Test func newItemsEmitsRecordsAddedAfterStart() async throws {
+        let source = DatabaseSource(url: url, pollInterval: .milliseconds(100))
+        let stream = source.newItems()
+        let fixture = url
+        Task.detached {
+            try await Task.sleep(for: .milliseconds(300))
+            var db: OpaquePointer?
+            sqlite3_open(fixture.path, &db)
+            defer { sqlite3_close(db) }
+            try Self.insert(db, recordID: 5, appID: 1, date: Date().timeIntervalSinceReferenceDate - 1, req: ["titl": "Live"])
+        }
+        var iterator = stream.makeAsyncIterator()
+        let first = await iterator.next()
+        #expect(first?.title == "Live")
+    }
+}

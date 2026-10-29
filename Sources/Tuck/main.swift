@@ -1,6 +1,8 @@
 import AppKit
 
-if await SpikeCommands.runIfRequested(CommandLine.arguments) {
+// Synchronous on purpose: an `await` here makes all of startup one main-actor job that never ends
+// (app.run() doesn't return), and every other main-actor task would wait behind it forever.
+if SpikeCommands.runIfRequested(CommandLine.arguments) {
     exit(0)
 }
 

@@ -44,7 +44,8 @@ public struct DatabaseSource: NotificationSource {
         try recent(limit: limit, now: Date())
     }
 
-    func recent(limit: Int, now: Date) throws -> [NotificationItem] {
+    /// Synchronous version of `recent(limit:)`, for command-line use and tests.
+    public func recent(limit: Int, now: Date) throws -> [NotificationItem] {
         try withDatabase { db in
             try query(db, afterID: -1, deliveredAfter: nil, now: now, limit: limit).map(\.1)
         }
