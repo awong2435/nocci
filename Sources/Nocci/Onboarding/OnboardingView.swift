@@ -140,9 +140,9 @@ private struct WelcomeStep: View {
             Text("Nocci shows your Mac notifications in the notch, like the Dynamic Island on iPhone.")
                 .multilineTextAlignment(.center)
             VStack(alignment: .leading, spacing: 6) {
-                Label("Reads notifications on this Mac only, and never changes them.", systemImage: "lock.fill")
-                Label("Never sends them anywhere.", systemImage: "wifi.slash")
-                Label("Never saves their text.", systemImage: "eye.slash.fill")
+                Label("Your notifications stay on this Mac.", systemImage: "lock.fill")
+                Label("Nothing is sent anywhere.", systemImage: "wifi.slash")
+                Label("Message text is never saved.", systemImage: "eye.slash.fill")
             }
             .padding(.top, 6)
             Text("This takes about a minute.")
@@ -159,7 +159,7 @@ private struct FullDiskAccessStep: View {
 
     var body: some View {
         VStack(spacing: 12) {
-            StepHeader(systemImage: "externaldrive.badge.checkmark", title: "Let Nocci read notifications", tag: "Required")
+            StepHeader(systemImage: "externaldrive.badge.checkmark", title: "Allow Full Disk Access", tag: "Required")
             Text("macOS keeps notifications in a protected place. To show them, Nocci needs Full Disk Access.")
                 .multilineTextAlignment(.center)
             VStack(alignment: .leading, spacing: 4) {
