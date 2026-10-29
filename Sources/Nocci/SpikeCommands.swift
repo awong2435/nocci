@@ -62,6 +62,12 @@ enum SpikeCommands {
                     }
                     lines.append("\(app.displayName): permission \(permission), poll \(outcome)")
                 }
+                // System Now Playing: source app and flags only, never the title or artist.
+                if let info = await SystemNowPlaying().read() {
+                    lines.append("System: app \(info.bundleID), \(info.isPlaying ? "playing" : "paused"), title \(info.title.isEmpty ? "missing" : "present"), duration \(info.duration > 0 ? "known" : "unknown")")
+                } else {
+                    lines.append("System: nothing")
+                }
                 semaphore.signal()
             }
             semaphore.wait()

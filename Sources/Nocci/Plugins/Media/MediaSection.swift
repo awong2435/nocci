@@ -35,11 +35,11 @@ struct MediaSection: View {
                     .scaleEffect(track.isPlaying ? 1 : 0.9)
                     .animation(.spring(duration: 0.35, bounce: 0.2), value: track.isPlaying)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(track.title.isEmpty ? track.app.displayName : track.title)
+                    Text(track.title.isEmpty ? track.appName : track.title)
                         .font(.system(size: 15 * scale, weight: .semibold))
                         .foregroundStyle(.white)
                         .lineLimit(1)
-                    Text(track.artist.isEmpty ? track.app.displayName : track.artist)
+                    Text(track.artist.isEmpty ? track.appName : track.artist)
                         .font(.system(size: 15 * scale))
                         .foregroundStyle(Color(white: 0.55))
                         .lineLimit(1)
@@ -187,7 +187,7 @@ private struct ProgressRow: View {
                     plugin.seek(to: value * duration)
                     dragFraction = nil
                 }
-                .allowsHitTesting(duration > 0)
+                .allowsHitTesting(plugin.canSeek)
                 timeLabel("−" + mediaTimeString(duration - fraction * duration))
             }
         }

@@ -4,7 +4,11 @@ import SwiftUI
 
 /// The track being shown. Memory only; never logged or saved.
 struct MediaTrack: Equatable {
-    var app: MediaApp
+    /// Music or Spotify, read and controlled over AppleScript; nil for any other app (system Now Playing),
+    /// which is controlled with media keys and can't seek.
+    var app: MediaApp?
+    var bundleID: String
+    var appName: String
     var title: String
     var artist: String
     var duration: Double
@@ -14,7 +18,8 @@ struct MediaTrack: Equatable {
     var asOf: Date
 }
 
-/// Now Playing for Apple Music and Spotify, with media-key fallback for other apps.
+/// Now Playing: Apple Music and Spotify over AppleScript (with artwork and seeking), and any other app (YouTube in
+/// a browser, podcasts) through macOS's system Now Playing, controlled with media keys.
 @MainActor @Observable
 final class MediaPlugin: NocciPlugin {
     let id = "media"
@@ -46,6 +51,7 @@ final class MediaPlugin: NocciPlugin {
     private var automationNote: String?
 
     @ObservationIgnored private let client = NowPlayingClient()
+    @ObservationIgnored private let systemNowPlaying = SystemNowPlaying()
     @ObservationIgnored private let mediaKeys = MediaKeys()
     @ObservationIgnored private let systemVolume = SystemVolume()
     @ObservationIgnored private var pollTask: Task<Void, Never>?
@@ -57,6 +63,8 @@ final class MediaPlugin: NocciPlugin {
     @ObservationIgnored private var isPolling = false
 
     var hasContent: Bool { isActive }
+    /// Seeking works only for Music and Spotify, and only with a known duration.
+    var canSeek: Bool { track?.app != nil && (track?.duration ?? 0) > 0 }
     var showsCompact: Bool { isActive && isPlaying }
 
     func setActive(_ active: Bool) {
@@ -96,7 +104,7 @@ final class MediaPlugin: NocciPlugin {
     /// A made-up track so the views can be rendered (`--render-media`) without a player or any permission.
     func loadSample(playing: Bool) {
         isActive = true
-        setTrack(MediaTrack(app: .music, title: "The Title Track", artist: "Origami Angel", duration: 151,
+        setTrack(MediaTrack(app: .music, bundleID: MediaApp.music.bundleID, appName: "Music", title: "The Title Track", artist: "Origami Angel", duration: 151,
                             isPlaying: playing, position: 133, asOf: .now))
         tint = Color(red: 0.55, green: 0.68, blue: 0.45)
     }
@@ -137,14 +145,14 @@ final class MediaPlugin: NocciPlugin {
 
     /// Seeks to a position in seconds.
     func seek(to seconds: Double) {
-        guard var current = track else { return }
+        guard var current = track, let app = current.app else { return }
         let target = min(max(seconds, 0), current.duration)
         current.position = target
         current.asOf = .now
         setTrack(current)
         Task {
-            if let code = await client.seek(to: target, in: current.app) {
-                reportControlError(code, app: current.app)
+            if let code = await client.seek(to: target, in: app) {
+                reportControlError(code, app: app)
             }
         }
     }
@@ -171,12 +179,13 @@ final class MediaPlugin: NocciPlugin {
         volume = min(max(value, 0), 1)
     }
 
-    /// Sends to the app whose track is showing. With no track, a press is the moment to ask for Automation
-    /// permission for a running Music or Spotify that hasn't been asked yet; otherwise it falls back to media keys.
+    /// Sends to Music or Spotify when its track is showing. With no track at all, a press is the moment to ask
+    /// for Automation permission for a running Music or Spotify that hasn't been asked yet. Anything else (another
+    /// app's track, or nothing to ask) uses media keys.
     private func send(_ command: MediaCommand) {
         Task {
             var app = track?.app
-            if app == nil {
+            if track == nil {
                 for candidate in MediaApp.allCases where await client.permission(for: candidate, ask: false) == .notAsked {
                     if await client.permission(for: candidate, ask: true) == .granted { app = candidate }
                     break
@@ -265,21 +274,40 @@ final class MediaPlugin: NocciPlugin {
                 break
             }
         }
+        // Anything else playing (or Music/Spotify without permission), from the system's Now Playing. Skipped
+        // while Music or Spotify is playing, since that's what would be shown anyway.
+        var system: SystemNowPlaying.Info?
+        if playing == nil, let info = await systemNowPlaying.read(), !info.title.isEmpty {
+            let scriptedTrack = [paused?.0].compactMap { $0 }.contains { $0.bundleID == info.bundleID }
+            if !scriptedTrack { system = info }
+        }
+
         guard isActive else { return }
         if self.connectableApp != connectableApp { self.connectableApp = connectableApp }
         if self.deniedApp != deniedApp { self.deniedApp = deniedApp }
-        guard let (app, snapshot) = playing ?? paused else {
+
+        // A playing track beats a paused one; Music/Spotify (artwork, seeking) beat other apps.
+        if let (app, snapshot) = playing ?? (system?.isPlaying == true ? nil : paused) {
+            setAutomationNote(nil)
+            let new = MediaTrack(app: app, bundleID: app.bundleID, appName: app.displayName,
+                                 title: snapshot.title, artist: snapshot.artist,
+                                 duration: snapshot.duration, isPlaying: snapshot.isPlaying,
+                                 position: snapshot.position, asOf: .now)
+            setTrack(new)
+            await showArtwork(key: "\(app.bundleID)|\(new.title)|\(new.artist)|\(Int(new.duration))", app: app, url: snapshot.artworkURL)
+        } else if let system {
+            setAutomationNote(nil)
+            let new = MediaTrack(app: nil, bundleID: system.bundleID, appName: AppInfo.name(for: system.bundleID),
+                                 title: system.title, artist: system.artist,
+                                 duration: system.duration, isPlaying: system.isPlaying,
+                                 position: system.position, asOf: .now)
+            setTrack(new)
+            await showArtwork(key: "\(system.bundleID)|\(new.title)|\(new.artist)", app: nil, url: nil, iconOf: system.bundleID)
+        } else {
             setTrack(nil)
             await showArtwork(key: nil, app: nil, url: nil)
             setAutomationNote(deniedApp.map(Self.automationMessage))
-            return
         }
-        setAutomationNote(nil)
-        let new = MediaTrack(app: app, title: snapshot.title, artist: snapshot.artist,
-                             duration: snapshot.duration, isPlaying: snapshot.isPlaying,
-                             position: snapshot.position, asOf: .now)
-        setTrack(new)
-        await showArtwork(key: "\(app.bundleID)|\(new.title)|\(new.artist)|\(Int(new.duration))", app: app, url: snapshot.artworkURL)
     }
 
     /// Updates the track, and the layout flags only when they actually change.
@@ -310,11 +338,12 @@ final class MediaPlugin: NocciPlugin {
         if automationNote != note { automationNote = note }
     }
 
-    /// Loads artwork once per track and derives the tint: Music's from the app, Spotify's from Spotify's image server.
-    private func showArtwork(key: String?, app: MediaApp?, url: URL?) async {
+    /// Loads artwork once per track and derives the tint: Music's from the app, Spotify's from Spotify's image
+    /// server, and for other apps the app's own icon (`iconOf`), since system Now Playing carries no artwork here.
+    private func showArtwork(key: String?, app: MediaApp?, url: URL?, iconOf bundleID: String? = nil) async {
         guard key != artworkKey else { return }
         artworkKey = key
-        guard let key, let app else {
+        guard let key, app != nil || bundleID != nil else {
             artwork = nil
             tint = ArtworkTint.fallback
             return
@@ -330,6 +359,8 @@ final class MediaPlugin: NocciPlugin {
             if let data = await client.musicArtworkData() { image = NSImage(data: data) }
         case .spotify:
             if let url, let data = await Self.downloadSpotifyArtwork(url) { image = NSImage(data: data) }
+        case nil:
+            image = bundleID.flatMap(AppInfo.icon(for:))
         }
         // A newer track may have started while this one's artwork was loading.
         guard artworkKey == key else { return }

@@ -11,6 +11,7 @@ A small macOS menu bar app that shows notifications in the notch as a Dynamic Is
 - Notifications (the core and the Notifications plugin): read-only, local-only, **no network**. Notification text must never reach any networking code. The core needs one permission (Full Disk Access).
 - Other plugins may use the network only for what they need, and only after the user turns them on. Today that's one thing: the media plugin downloads Spotify cover images from Spotify's image server (`*.scdn.co`, https, no cookies or cache). They never send personal data.
 - Plugins may need more permissions (media: Automation for Music/Spotify, Accessibility for media keys), requested only after the user turns the plugin on and uses it. Never log or save personal content (track info included).
+- Media also reads macOS's system Now Playing (any app, e.g. YouTube in a browser) by running a JavaScript for Automation script in `/usr/bin/osascript` (`SystemNowPlaying.swift`), since Nocci itself is blocked from the private MediaRemote framework. Undocumented and may break on a macOS update; it must fail quietly. Don't load our own code into Apple binaries (the `perl` dylib trick): the user hasn't approved that.
 - Open the notification database read-only. Never write to it or copy it.
 - Keep notification text in memory only. Never log it or save it. The only things saved are the "last opened" time and the dismissed IDs.
 - No networking code (`URLSession`, `Network`, sockets) outside `Sources/Nocci/Plugins/Media/MediaPlugin.swift`'s artwork download.
