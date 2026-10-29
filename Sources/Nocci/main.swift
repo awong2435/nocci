@@ -6,6 +6,9 @@ if SpikeCommands.runIfRequested(CommandLine.arguments) {
     exit(0)
 }
 
+// Before AppDelegate creates the settings, so they load the carried-over values.
+SettingsMigration.run()
+
 let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate

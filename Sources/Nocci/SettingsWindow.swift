@@ -29,14 +29,22 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     private let settings: NocciSettings
     private let plugins: [PluginInfo]
     private let store: NotificationStore
+    private let onShowGuide: () -> Void
     private let onPreviewChange: (PanelController.Preview?) -> Void
     private let model = PreviewModel()
     private var window: NSWindow?
 
-    init(settings: NocciSettings, plugins: [PluginInfo], store: NotificationStore, onPreviewChange: @escaping (PanelController.Preview?) -> Void) {
+    init(
+        settings: NocciSettings,
+        plugins: [PluginInfo],
+        store: NotificationStore,
+        onShowGuide: @escaping () -> Void,
+        onPreviewChange: @escaping (PanelController.Preview?) -> Void
+    ) {
         self.settings = settings
         self.plugins = plugins
         self.store = store
+        self.onShowGuide = onShowGuide
         self.onPreviewChange = onPreviewChange
         super.init()
         model.onChange = { [weak self] preview in
@@ -70,7 +78,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         window.title = "Nocci Settings"
         window.isReleasedWhenClosed = false
         window.delegate = self
-        window.contentView = NSHostingView(rootView: SettingsView(settings: settings, model: model, plugins: plugins, store: store))
+        window.contentView = NSHostingView(rootView: SettingsView(settings: settings, model: model, plugins: plugins, store: store, onShowGuide: onShowGuide))
         window.center()
         return window
     }
@@ -82,6 +90,7 @@ private struct SettingsView: View {
     @Bindable var model: PreviewModel
     let plugins: [PluginInfo]
     let store: NotificationStore
+    let onShowGuide: () -> Void
     /// Mirrors macOS's login-item state, read when the window opens.
     @State private var opensAtLogin = LoginItem.isEnabled
     @State private var loginNeedsApproval = LoginItem.needsApproval
@@ -98,6 +107,9 @@ private struct SettingsView: View {
                     LabeledContent("macOS needs your approval") {
                         Button("Open Login Items") { LoginItem.openSettings() }
                     }
+                }
+                LabeledContent("Permissions and setup") {
+                    Button("Run Setup Guide Again", action: onShowGuide)
                 }
             } header: {
                 Text("General")

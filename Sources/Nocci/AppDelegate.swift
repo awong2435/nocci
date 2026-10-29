@@ -27,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var activePluginIDs: Set<String> = []
     private var panelController: PanelController?
     private var settingsWindow: SettingsWindowController?
+    private var setupGuide: OnboardingWindowController?
     private var statusItem: NSStatusItem?
     private let statusLine = NSMenuItem(title: "Starting…", action: nil, keyEquivalent: "")
     private var listenTask: Task<Void, Never>?
@@ -42,12 +43,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         saveReadStateOnChange()
         applyAlertDurationOnChange()
         startListening()
+        // First launch, or Full Disk Access still missing: walk through setup.
+        if !UserDefaults.standard.bool(forKey: "onboardingCompleted") || OnboardingWindowController.needsFullDiskAccess {
+            showSetupGuide()
+        }
+    }
+
+    @objc private func showSetupGuide() {
+        if setupGuide == nil {
+            setupGuide = OnboardingWindowController(settings: settings) {}
+        }
+        setupGuide?.show()
     }
 
     @objc private func showSettings() {
         if settingsWindow == nil {
             let pluginInfo = plugins.map { PluginInfo(id: $0.id, name: $0.name, systemImage: $0.systemImage) }
-            settingsWindow = SettingsWindowController(settings: settings, plugins: pluginInfo, store: model.store) { [weak self] preview in
+            settingsWindow = SettingsWindowController(
+                settings: settings,
+                plugins: pluginInfo,
+                store: model.store,
+                onShowGuide: { [weak self] in self?.showSetupGuide() }
+            ) { [weak self] preview in
                 self?.panelController?.preview = preview
             }
         }
@@ -141,6 +158,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let settingsItem = NSMenuItem(title: "Settings…", action: #selector(showSettings), keyEquivalent: ",")
         settingsItem.target = self
         menu.addItem(settingsItem)
+        let guideItem = NSMenuItem(title: "Setup Guide…", action: #selector(showSetupGuide), keyEquivalent: "")
+        guideItem.target = self
+        menu.addItem(guideItem)
 
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Nocci", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
