@@ -47,7 +47,8 @@ struct MediaSection: View {
                 Spacer(minLength: 8)
                 WaveformView(tint: plugin.tint, isPlaying: track.isPlaying, height: 22 * scale)
             }
-            if showVolume {
+            // Tracks that can't seek (other apps) get the volume bar in the timer's place.
+            if showVolume || volumeReplacesTimer {
                 volumeRow
             } else {
                 ProgressRow(plugin: plugin, duration: track.duration, isPlaying: track.isPlaying, scale: scale)
@@ -123,7 +124,8 @@ struct MediaSection: View {
                 .buttonStyle(PressableStyle())
                 button("forward.fill", side) { plugin.next() }
             }
-            if plugin.volume != nil {
+            // No speaker button when the volume bar is already showing in the timer's place.
+            if plugin.volume != nil, !volumeReplacesTimer {
                 HStack {
                     Spacer()
                     button(showVolume ? "speaker.wave.2.fill" : "speaker.wave.2", 15 * scale, dim: !showVolume) { toggleVolume() }
@@ -131,6 +133,11 @@ struct MediaSection: View {
             }
         }
         .frame(height: (large ? 40 : 30) * scale)
+    }
+
+    /// A track that can't seek shows volume instead of the timer, when the output device has a volume.
+    private var volumeReplacesTimer: Bool {
+        plugin.track != nil && !plugin.canSeek && plugin.volume != nil
     }
 
     /// Volume in the same thin iOS bar as the progress row, between a quiet and a loud speaker.
