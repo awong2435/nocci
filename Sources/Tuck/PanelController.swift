@@ -12,7 +12,7 @@ private let log = Logger(subsystem: "local.tuck", category: "panel")
 final class PanelPresentation {
     enum Content: Equatable {
         case alert(item: NotificationItem, notchHeight: CGFloat, scrolls: Bool)
-        case counter(notchWidth: CGFloat)
+        case counter
 
         var isAlert: Bool {
             if case .alert = self { true } else { false }
@@ -38,7 +38,7 @@ final class PanelController: NSObject {
         self.model = model
         super.init()
 
-        let hostingView = NSHostingView(rootView: NotchRootView(presentation: presentation, store: model.store) { [weak model] in
+        let hostingView = NSHostingView(rootView: NotchRootView(presentation: presentation) { [weak model] in
             model?.dismissAlert()
         })
         // The panel decides its size; the SwiftUI view just fills it.
@@ -52,6 +52,10 @@ final class PanelController: NSObject {
             name: NSApplication.didChangeScreenParametersNotification,
             object: nil
         )
+        // Entering or leaving a full-screen app changes the active space or the frontmost app.
+        for name in [NSWorkspace.activeSpaceDidChangeNotification, NSWorkspace.didActivateApplicationNotification] {
+            NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(screensChanged), name: name, object: nil)
+        }
     }
 
     private func trackState() {
@@ -66,10 +70,10 @@ final class PanelController: NSObject {
     }
 
     @objc private func screensChanged() {
-        update()
+        update(logAlert: false)
     }
 
-    private func update() {
+    private func update(logAlert: Bool = true) {
         guard let screen = NSScreen.tuckTarget else { return }
         let geometry = screen.notchGeometry
 
@@ -84,13 +88,15 @@ final class PanelController: NSObject {
             present(.alert(item: item, notchHeight: notchHeight, scrolls: naturalHeight > maxHeight), frame: frame)
 
             // ID and latency only; never notification text.
+            guard logAlert else { return }
             let latency = Date().timeIntervalSince(item.date)
             log.notice("alert id=\(item.id, privacy: .public) app=\(item.appBundleID, privacy: .public) latency=\(latency, format: .fixed(precision: 2), privacy: .public)s")
 
         case .counter:
-            let width = geometry.notchSize.width + 2 * CounterBadge.wingWidth
-            let height = geometry.hasNotch ? 0 : CounterBadge.pillHeight
-            present(.counter(notchWidth: geometry.notchSize.width), frame: geometry.panelFrame(contentSize: CGSize(width: width, height: height)))
+            // Stay out of the way over full-screen apps, where the menu bar area is plain black.
+            guard !FullScreenDetector.isFullScreenAppShowing(on: screen) else { return present(nil, frame: nil) }
+            let width = geometry.hasNotch ? geometry.notchSize.width : CounterBadge.pillWidth
+            present(.counter, frame: geometry.panelFrame(contentSize: CGSize(width: width, height: CounterBadge.lipHeight)))
 
         case .hidden, .list:
             present(nil, frame: nil)
@@ -139,7 +145,6 @@ final class PanelController: NSObject {
 /// Root SwiftUI view inside the notch panel.
 private struct NotchRootView: View {
     let presentation: PanelPresentation
-    let store: NotificationStore
     let onTapAlert: () -> Void
 
     var body: some View {
@@ -151,8 +156,8 @@ private struct NotchRootView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
                     // Temporary: clicking hides the alert. M7 adds swipe to dismiss, M8 makes click open the app.
                     .onTapGesture(perform: onTapAlert)
-            case .counter(let notchWidth):
-                CounterBadge(count: store.unreadCount, newestAppBundleID: store.items.first?.appBundleID, notchWidth: notchWidth)
+            case .counter:
+                CounterBadge()
                     .transition(.opacity)
             case nil:
                 EmptyView()

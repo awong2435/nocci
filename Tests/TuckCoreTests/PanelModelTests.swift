@@ -66,6 +66,21 @@ struct PanelModelTests {
         #expect(model.state == .hidden)
     }
 
+    @Test func refreshShowsTheCounterForUnreadLoadedAtLaunch() {
+        let model = model()
+        model.store.ingest([item("a")])
+        #expect(model.state == .hidden)
+        model.refresh()
+        #expect(model.state == .counter)
+    }
+
+    @Test func refreshLeavesAnAlertAlone() {
+        let model = model()
+        model.receive(item("a"))
+        model.refresh()
+        #expect(model.state == .alert("a"))
+    }
+
     @Test func dismissHidesTheAlertButKeepsTheNotification() {
         let model = model()
         model.receive(item("a"))

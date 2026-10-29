@@ -39,6 +39,12 @@ public final class PanelModel {
         state = restingState
     }
 
+    /// Re-evaluates the counter after the store changes outside an alert, such as the first load at launch.
+    public func refresh() {
+        guard state == .hidden || state == .counter else { return }
+        state = restingState
+    }
+
     /// Counter when anything is unread, otherwise hidden.
     private var restingState: PanelState {
         store.unreadCount > 0 ? .counter : .hidden

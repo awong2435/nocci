@@ -53,6 +53,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         listenTask = Task { [model, statusLine] in
             do {
                 model.store.ingest(try await source.recent(limit: 200))
+                model.refresh()
                 statusLine.title = "Watching notifications"
             } catch {
                 // DatabaseError descriptions contain codes only, never notification text.

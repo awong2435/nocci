@@ -53,15 +53,19 @@ public struct DatabaseSource: NotificationSource {
 
     /// Polls for notifications that arrive, or whose scheduled time passes, after the stream starts.
     public func newItems() -> AsyncStream<NotificationItem> {
+        // Take the starting point now, not when the task first runs, so nothing that arrives
+        // in between is skipped.
+        let startID: Int64 = (try? withDatabase { db in try maxRecordID(db) }) ?? 0
+        let startDate = Date()
         let (stream, continuation) = AsyncStream<NotificationItem>.makeStream()
-        let task = Task { await poll(into: continuation) }
+        let task = Task { await poll(into: continuation, after: startID, since: startDate) }
         continuation.onTermination = { _ in task.cancel() }
         return stream
     }
 
-    private func poll(into continuation: AsyncStream<NotificationItem>.Continuation) async {
-        var lastID: Int64 = (try? withDatabase { db in try maxRecordID(db) }) ?? 0
-        var lastCheck = Date()
+    private func poll(into continuation: AsyncStream<NotificationItem>.Continuation, after startID: Int64, since startDate: Date) async {
+        var lastID = startID
+        var lastCheck = startDate
         while !Task.isCancelled {
             try? await Task.sleep(for: pollInterval)
             let now = Date()

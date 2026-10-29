@@ -12,7 +12,9 @@ struct DatabaseSourceTests {
         var db: OpaquePointer?
         #expect(sqlite3_open(url.path, &db) == SQLITE_OK)
         defer { sqlite3_close(db) }
+        // WAL mode, like the real database, so readers and the writer never block each other.
         sqlite3_exec(db, """
+            PRAGMA journal_mode = WAL;
             CREATE TABLE app (app_id INTEGER PRIMARY KEY, identifier VARCHAR);
             CREATE TABLE record (rec_id INTEGER PRIMARY KEY, app_id INTEGER, data BLOB, delivered_date REAL);
             INSERT INTO app VALUES (1, 'com.tinyspeck.slackmacgap'), (2, 'com.apple.mail');
@@ -80,18 +82,18 @@ struct DatabaseSourceTests {
 }
 
 extension DatabaseSourceTests {
-    @Test func newItemsEmitsRecordsAddedAfterStart() async throws {
+    @Test(.timeLimit(.minutes(1)))
+    func newItemsEmitsRecordsAddedAfterStart() async throws {
         let source = DatabaseSource(url: url, pollInterval: .milliseconds(100))
-        let stream = source.newItems()
-        let fixture = url
-        Task.detached {
-            try await Task.sleep(for: .milliseconds(300))
-            var db: OpaquePointer?
-            sqlite3_open(fixture.path, &db)
-            defer { sqlite3_close(db) }
-            try Self.insert(db, recordID: 5, appID: 1, date: Date().timeIntervalSinceReferenceDate - 1, req: ["titl": "Live"])
-        }
-        var iterator = stream.makeAsyncIterator()
+        var iterator = source.newItems().makeAsyncIterator()
+
+        try await Task.sleep(for: .milliseconds(250))
+        var db: OpaquePointer?
+        sqlite3_open(url.path, &db)
+        sqlite3_busy_timeout(db, 5_000)
+        try Self.insert(db, recordID: 5, appID: 1, date: Date().timeIntervalSinceReferenceDate - 1, req: ["titl": "Live"])
+        sqlite3_close(db)
+
         let first = await iterator.next()
         #expect(first?.title == "Live")
     }
