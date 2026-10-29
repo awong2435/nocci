@@ -27,6 +27,24 @@ enum SpikeCommands {
             return true
         }
         #endif
+        if arguments.contains("--now-playing-status") {
+            // Whether macOS's private Now Playing framework answers Nocci itself. Field names only, never values.
+            typealias GetInfo = @convention(c) (DispatchQueue, @escaping ([String: Any]?) -> Void) -> Void
+            guard let handle = dlopen("/System/Library/PrivateFrameworks/MediaRemote.framework/MediaRemote", RTLD_NOW),
+                  let symbol = dlsym(handle, "MRMediaRemoteGetNowPlayingInfo") else {
+                print("MediaRemote unavailable")
+                return true
+            }
+            let semaphore = DispatchSemaphore(value: 0)
+            nonisolated(unsafe) var result = "no callback in 3 s"
+            unsafeBitCast(symbol, to: GetInfo.self)(DispatchQueue.global()) { info in
+                result = info.map { "got \($0.count) fields" } ?? "empty"
+                semaphore.signal()
+            }
+            _ = semaphore.wait(timeout: .now() + 3)
+            print(result)
+            return true
+        }
         if arguments.contains("--automation-status") {
             // Reads the Automation permission for Music and Spotify without ever asking.
             let semaphore = DispatchSemaphore(value: 0)
@@ -37,7 +55,7 @@ enum SpikeCommands {
                     let permission = await client.permission(for: app, ask: false)
                     // Outcome type and error code only; never track details.
                     let outcome: String = switch await client.poll(app) {
-                    case .track(let snapshot): "track (\(snapshot.isPlaying ? "playing" : "paused"))"
+                    case .track(let snapshot): "track (\(snapshot.isPlaying ? "playing" : "paused"), artwork host: \(snapshot.artworkURL?.host() ?? "none"))"
                     case .idle: "idle"
                     case .denied: "denied"
                     case .failed(let code): "failed \(code)"

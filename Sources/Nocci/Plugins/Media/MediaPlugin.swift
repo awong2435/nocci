@@ -270,7 +270,7 @@ final class MediaPlugin: NocciPlugin {
         if self.deniedApp != deniedApp { self.deniedApp = deniedApp }
         guard let (app, snapshot) = playing ?? paused else {
             setTrack(nil)
-            await showArtwork(key: nil, app: nil)
+            await showArtwork(key: nil, app: nil, url: nil)
             setAutomationNote(deniedApp.map(Self.automationMessage))
             return
         }
@@ -279,7 +279,7 @@ final class MediaPlugin: NocciPlugin {
                              duration: snapshot.duration, isPlaying: snapshot.isPlaying,
                              position: snapshot.position, asOf: .now)
         setTrack(new)
-        await showArtwork(key: "\(app.bundleID)|\(new.title)|\(new.artist)|\(Int(new.duration))", app: app)
+        await showArtwork(key: "\(app.bundleID)|\(new.title)|\(new.artist)|\(Int(new.duration))", app: app, url: snapshot.artworkURL)
     }
 
     /// Updates the track, and the layout flags only when they actually change.
@@ -289,12 +289,29 @@ final class MediaPlugin: NocciPlugin {
         if isPlaying != (new?.isPlaying ?? false) { isPlaying = new?.isPlaying ?? false }
     }
 
+    /// Downloads a Spotify cover image. The only network use in Nocci: an image request to Spotify's own image
+    /// server (https, `*.scdn.co`), with no cookies, cache, or other data sent, and no notification content ever
+    /// involved. Anything else is refused.
+    private static func downloadSpotifyArtwork(_ url: URL) async -> Data? {
+        guard url.scheme == "https", let host = url.host(), host == "scdn.co" || host.hasSuffix(".scdn.co") else { return nil }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpShouldSetCookies = false
+        configuration.urlCache = nil
+        configuration.timeoutIntervalForRequest = 10
+        let session = URLSession(configuration: configuration)
+        defer { session.finishTasksAndInvalidate() }
+        guard let (data, response) = try? await session.data(from: url),
+              (response as? HTTPURLResponse)?.statusCode == 200,
+              data.count < 5_000_000 else { return nil }
+        return data
+    }
+
     private func setAutomationNote(_ note: String?) {
         if automationNote != note { automationNote = note }
     }
 
-    /// Loads artwork once per track (Music only) and derives the tint.
-    private func showArtwork(key: String?, app: MediaApp?) async {
+    /// Loads artwork once per track and derives the tint: Music's from the app, Spotify's from Spotify's image server.
+    private func showArtwork(key: String?, app: MediaApp?, url: URL?) async {
         guard key != artworkKey else { return }
         artworkKey = key
         guard let key, let app else {
@@ -308,9 +325,14 @@ final class MediaPlugin: NocciPlugin {
             return
         }
         var image: NSImage?
-        if app == .music, let data = await client.musicArtworkData() {
-            image = NSImage(data: data)
+        switch app {
+        case .music:
+            if let data = await client.musicArtworkData() { image = NSImage(data: data) }
+        case .spotify:
+            if let url, let data = await Self.downloadSpotifyArtwork(url) { image = NSImage(data: data) }
         }
+        // A newer track may have started while this one's artwork was loading.
+        guard artworkKey == key else { return }
         let color = ArtworkTint.color(for: image)
         artworkCache[key] = (image, color)
         artworkOrder.append(key)

@@ -51,6 +51,8 @@ struct NowPlayingSnapshot: Sendable {
     var duration: Double
     var position: Double
     var isPlaying: Bool
+    /// Spotify's cover image address (on Spotify's image server); nil for Music, whose artwork is local.
+    var artworkURL: URL?
 }
 
 /// Outcome of polling one app.
@@ -123,7 +125,8 @@ final class NowPlayingClient: @unchecked Sendable {
                     artist: list.atIndex(3)?.stringValue ?? "",
                     duration: Double(list.atIndex(4)?.int32Value ?? 0) / 1000,
                     position: Double(list.atIndex(5)?.int32Value ?? 0) / 1000,
-                    isPlaying: state == "playing"))
+                    isPlaying: state == "playing",
+                    artworkURL: list.numberOfItems >= 6 ? list.atIndex(6)?.stringValue.flatMap(URL.init(string:)) : nil))
             }
         }
     }
@@ -209,9 +212,9 @@ final class NowPlayingClient: @unchecked Sendable {
     /// Returns {state, name, artist, duration ms, position ms}. Rethrows only -1743 so denial is detectable.
     /// (Variable names avoid `st`, which AppleScript won't accept as an identifier.)
     private static func pollScript(_ app: MediaApp) -> String {
-        let (durationExpr, positionExpr) = switch app {
-        case .music: ("((duration of t) * 1000) as integer", "(player position * 1000) as integer")
-        case .spotify: ("(duration of t) as integer", "(player position * 1000) as integer")
+        let (durationExpr, positionExpr, artworkExpr) = switch app {
+        case .music: ("((duration of t) * 1000) as integer", "(player position * 1000) as integer", "")
+        case .spotify: ("(duration of t) as integer", "(player position * 1000) as integer", ", artwork url of t")
         }
         return guarded(app, """
             tell application id "\(app.bundleID)"
@@ -221,7 +224,7 @@ final class NowPlayingClient: @unchecked Sendable {
             		set t to current track
             		set stateName to "paused"
             		if playerState is playing then set stateName to "playing"
-            		return {stateName, name of t, artist of t, \(durationExpr), \(positionExpr)}
+            		return {stateName, name of t, artist of t, \(durationExpr), \(positionExpr)\(artworkExpr)}
             	on error errMsg number errNum
             		if errNum is -1743 then error errMsg number errNum
             		return {"stopped", "", "", 0, 0}
