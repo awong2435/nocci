@@ -105,6 +105,8 @@ final class PanelController: NSObject {
     private var currentScreenID: CGDirectDisplayID?
     private let swipeTracker = SwipeTracker()
     private var scrollMonitor: Any?
+    /// Watches for Escape, only while an alert or the list is open. See `watchEscape(_:)`.
+    private var escapeMonitor: Any?
     /// Mouse x and width when an edge drag started; nil when not resizing.
     private var resizeStart: (mouseX: CGFloat, width: Double)?
 
@@ -245,6 +247,30 @@ final class PanelController: NSObject {
         }
     }
 
+    /// Escape closes the list or the alert. Seeing keys pressed in other apps needs Accessibility; without it the
+    /// monitor simply never fires (no prompt). The monitor exists only while something is open, looks only at
+    /// whether the key is Escape, and records nothing.
+    private func watchEscape(_ open: Bool) {
+        if open, escapeMonitor == nil {
+            escapeMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard event.keyCode == 53 else { return }  // Escape
+                self?.escapePressed()
+            }
+        } else if !open, let monitor = escapeMonitor {
+            NSEvent.removeMonitor(monitor)
+            escapeMonitor = nil
+        }
+    }
+
+    private func escapePressed() {
+        guard preview == nil else { return }
+        switch model.state {
+        case .list: model.closeList(marksRead: settings.activePlugins.contains("notifications"))
+        case .alert: model.dismissAlert()
+        case .counter, .hidden: break
+        }
+    }
+
     /// Opens the app a notification came from, then collapses the alert or closes the island.
     private func open(_ item: NotificationItem) {
         if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: item.appBundleID) {
@@ -368,6 +394,8 @@ final class PanelController: NSObject {
         }
         // Only alerts and the open island have edge handles; a drag can't still be going on otherwise.
         if case .alert = state {} else if state != .list { resizeStart = nil }
+        let isOpen = if case .alert = state { true } else { state == .list }
+        watchEscape(isOpen && preview == nil)
 
         switch state {
         case .alert:

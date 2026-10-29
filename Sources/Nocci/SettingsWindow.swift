@@ -82,9 +82,29 @@ private struct SettingsView: View {
     @Bindable var model: PreviewModel
     let plugins: [PluginInfo]
     let store: NotificationStore
+    /// Mirrors macOS's login-item state, read when the window opens.
+    @State private var opensAtLogin = LoginItem.isEnabled
+    @State private var loginNeedsApproval = LoginItem.needsApproval
+    @State private var loginError: String?
 
     var body: some View {
         Form {
+            Section {
+                Toggle("Open at login", isOn: Binding(
+                    get: { opensAtLogin },
+                    set: { setOpensAtLogin($0) }
+                ))
+                if loginNeedsApproval {
+                    LabeledContent("macOS needs your approval") {
+                        Button("Open Login Items") { LoginItem.openSettings() }
+                    }
+                }
+            } header: {
+                Text("General")
+            } footer: {
+                if let loginError { Text(loginError) }
+            }
+
             Section {
                 Picker("Preview", selection: $model.selection) {
                     ForEach(PanelController.Preview.allCases, id: \.self) { preview in
@@ -221,6 +241,17 @@ private struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    private func setOpensAtLogin(_ enabled: Bool) {
+        do {
+            try LoginItem.setEnabled(enabled)
+            loginError = nil
+        } catch {
+            loginError = "Couldn't change the login item: \(error.localizedDescription)"
+        }
+        opensAtLogin = LoginItem.isEnabled
+        loginNeedsApproval = LoginItem.needsApproval
     }
 
     private func previewLabel(_ preview: PanelController.Preview) -> String {
