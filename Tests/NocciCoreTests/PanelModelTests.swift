@@ -138,3 +138,33 @@ extension PanelModelTests {
         #expect(model.state == .counter)
     }
 }
+
+extension PanelModelTests {
+    @Test func dismissingTheAlertRemovesItAndCollapses() {
+        let model = model()
+        model.receive(item("a"))
+        model.receive(item("b"))
+        model.dismiss(id: "b")
+        #expect(model.state == .counter)
+        #expect(model.store.items.map(\.id) == ["a"])
+        #expect(model.store.unreadCount == 1)
+    }
+
+    @Test func dismissingAListItemLeavesTheListOpen() {
+        let model = model()
+        model.receive(item("a"))
+        model.openList()
+        model.dismiss(id: "a")
+        #expect(model.state == .list)
+        #expect(model.store.items.isEmpty)
+    }
+}
+
+extension PanelModelTests {
+    @Test func hiddenAppsDontAlert() {
+        let model = model()
+        model.store.hiddenApps = ["app"]
+        model.receive(item("a"))
+        #expect(model.state == .hidden)
+    }
+}

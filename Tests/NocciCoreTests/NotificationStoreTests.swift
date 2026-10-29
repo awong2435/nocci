@@ -63,3 +63,61 @@ extension NotificationStoreTests {
         #expect(groups[1].items.map(\.id) == ["m1"])
     }
 }
+
+extension NotificationStoreTests {
+    func appItem(_ id: String, _ bundleID: String, name: String? = nil, at offset: TimeInterval) -> NotificationItem {
+        NotificationItem(id: id, appBundleID: bundleID, appName: name ?? bundleID, title: id, body: "", date: t0.addingTimeInterval(offset))
+    }
+
+    @Test func hiddenAppsAreExcludedFromItemsGroupsAndUnread() {
+        let store = NotificationStore()
+        store.ingest([appItem("s1", "slack", at: 0), appItem("m1", "mail", at: 10), appItem("s2", "slack", at: 20)])
+        store.hiddenApps = ["slack"]
+
+        #expect(store.items.map(\.id) == ["m1"])
+        #expect(store.groupedByApp.map(\.appBundleID) == ["mail"])
+        #expect(store.unreadCount == 1)
+        #expect(store.allItems.count == 3)
+    }
+
+    @Test func isVisibleIsFalseForHiddenAppsAndDismissedItems() {
+        let store = NotificationStore()
+        let slack = appItem("s1", "slack", at: 0)
+        let mail = appItem("m1", "mail", at: 10)
+        let dismissed = appItem("m2", "mail", at: 20)
+        store.ingest([slack, mail, dismissed])
+        store.dismiss(id: "m2")
+        store.hiddenApps = ["slack"]
+
+        #expect(!store.isVisible(slack))
+        #expect(store.isVisible(mail))
+        #expect(!store.isVisible(dismissed))
+    }
+
+    @Test func unhidingAnAppBringsItsNotificationsBack() {
+        let store = NotificationStore()
+        store.ingest([appItem("s1", "slack", at: 0), appItem("m1", "mail", at: 10)])
+        store.hiddenApps = ["slack"]
+        #expect(store.unreadCount == 1)
+
+        store.hiddenApps = []
+        #expect(store.items.map(\.id) == ["m1", "s1"])
+        #expect(store.groupedByApp.count == 2)
+        #expect(store.unreadCount == 2)
+    }
+
+    @Test func knownAppsAreDeduplicatedAndSortedByName() {
+        let store = NotificationStore()
+        store.ingest([
+            appItem("1", "com.zoom", name: "zoom.us", at: 0),
+            appItem("2", "com.slack", name: "Slack", at: 10),
+            appItem("3", "com.apple.mail", name: "mail", at: 20),
+            appItem("4", "com.slack", name: "Slack", at: 30),
+        ])
+        store.hiddenApps = ["com.slack"]
+
+        let apps = store.knownApps
+        #expect(apps.map(\.bundleID) == ["com.apple.mail", "com.slack", "com.zoom"])
+        #expect(apps.map(\.name) == ["mail", "Slack", "zoom.us"])
+    }
+}

@@ -103,6 +103,8 @@ final class PanelController: NSObject {
     private var rightClickMonitors: [Any] = []
     /// The screen the island is currently on.
     private var currentScreenID: CGDirectDisplayID?
+    private let swipeTracker = SwipeTracker()
+    private var scrollMonitor: Any?
     /// Mouse x and width when an edge drag started; nil when not resizing.
     private var resizeStart: (mouseX: CGFloat, width: Double)?
 
@@ -113,15 +115,17 @@ final class PanelController: NSObject {
         self.openSettings = openSettings
         super.init()
 
+        let actions = NotificationActions(open: { [weak self] item in self?.open(item) })
         let hostingView = FirstClickHostingView(rootView: NotchRootView(
             presentation: presentation,
             store: model.store,
             settings: settings,
             plugins: Dictionary(uniqueKeysWithValues: plugins.map { ($0.id, $0) }),
             ear: Self.ear,
-            onTapAlert: { [weak model] in model?.dismissAlert() },
             onResize: { [weak self] event in self?.resize(event) }
-        ))
+        )
+        .environment(\.swipeTracker, swipeTracker)
+        .environment(\.notificationActions, actions))
         // The panel decides its size; the SwiftUI view just fills it.
         hostingView.sizingOptions = []
         panel.contentView = hostingView
@@ -140,6 +144,13 @@ final class PanelController: NSObject {
             }
         )
         watchRightClicks()
+        swipeTracker.onDismiss = { [weak model] id in model?.dismiss(id: id) }
+        // Two-finger swipes arrive as scroll events, delivered to the panel under the pointer even when Nocci
+        // isn't the active app.
+        scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            guard let self, event.window === panel, let view = panel.contentView else { return event }
+            return swipeTracker.handleScroll(event, in: view) ? nil : event
+        }
 
         trackState()
         trackSettings()
@@ -190,6 +201,8 @@ final class PanelController: NSObject {
                 if let media = plugin as? MediaPlugin {
                     _ = media.hasTrack
                     _ = media.message
+                    _ = media.connectableApp
+                    _ = media.deniedApp
                 }
             }
         } onChange: { [weak self] in
@@ -221,6 +234,18 @@ final class PanelController: NSObject {
         guard let screen = targetScreen() else { return }
         if hotZone(on: screen).contains(point) || (panel.isVisible && panel.frame.contains(point)) {
             openSettings()
+        }
+    }
+
+    /// Opens the app a notification came from, then collapses the alert or closes the island.
+    private func open(_ item: NotificationItem) {
+        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: item.appBundleID) {
+            NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+        }
+        switch model.state {
+        case .alert: model.dismissAlert()
+        case .list: model.closeList(marksRead: settings.activePlugins.contains("notifications"))
+        case .counter, .hidden: break
         }
     }
 
@@ -439,8 +464,9 @@ private struct NotchRootView: View {
     let settings: NocciSettings
     let plugins: [String: any NocciPlugin]
     let ear: CGFloat
-    let onTapAlert: () -> Void
     let onResize: (PanelController.ResizeEvent) -> Void
+    @Environment(\.swipeTracker) private var swipeTracker
+    @Environment(\.notificationActions) private var actions
 
     var body: some View {
         let shape = IslandShape(ear: ear, bottomRadius: presentation.bottomRadius)
@@ -525,10 +551,10 @@ private struct NotchRootView: View {
         switch content {
         case .alert(let item, let scrolls, _):
             AlertCard(item: item, notchHeight: presentation.notchHeight, scrolls: scrolls)
-                // The whole card, not just its text.
+                // The whole card, not just its text: click opens the app, swipe up dismisses.
                 .contentShape(Rectangle())
-                // Temporary: clicking hides the alert. M7 adds swipe to dismiss, M8 makes click open the app.
-                .onTapGesture(perform: onTapAlert)
+                .onTapGesture { actions.open(item) }
+                .swipeToDismiss(item.id, axis: .vertical, tracker: swipeTracker)
         case .rest(_, _, let compactID):
             if let compactID, let plugin = plugins[compactID] {
                 // Compact views in the wings beside the notch.

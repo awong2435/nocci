@@ -61,7 +61,12 @@ struct MediaSection: View {
         VStack(spacing: 4) {
             if showVolume { volumeRow }
             controls(isPlaying: nil, large: false)
-            if let message = plugin.message {
+            if let app = plugin.connectableApp {
+                // macOS only shows its consent dialog when Nocci asks; this is the clear place to ask.
+                pillButton("Allow Nocci to control \(app.displayName)") { plugin.connect() }
+            } else if let app = plugin.deniedApp {
+                pillButton("Turn on \(app.displayName) in Automation settings") { plugin.openAutomationSettings() }
+            } else if let message = plugin.message {
                 messageText(message)
             } else {
                 Text("Media keys")
@@ -69,6 +74,19 @@ struct MediaSection: View {
                     .foregroundStyle(Color(white: 0.5))
             }
         }
+    }
+
+    private func pillButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 12 * scale, weight: .medium))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 5)
+                .background(Color.white.opacity(0.15), in: Capsule())
+        }
+        .buttonStyle(PressableStyle())
+        .padding(.top, 2)
     }
 
     private func messageText(_ message: String) -> some View {

@@ -90,4 +90,16 @@ extension NocciSettingsTests {
         defaults.set(9.0, forKey: SettingsKey.fontScale)
         #expect(NocciSettings(defaults: defaults).fontScale == NocciSettings.fontScaleRange.upperBound)
     }
+
+    @Test func hiddenAppsDefaultToEmptyAndAreSavedReloadedAndReset() {
+        let settings = NocciSettings(defaults: defaults)
+        #expect(settings.hiddenApps.isEmpty)
+
+        settings.hiddenApps = ["com.slack", "com.apple.mail"]
+        #expect(NocciSettings(defaults: defaults).hiddenApps == ["com.slack", "com.apple.mail"])
+
+        settings.reset()
+        #expect(settings.hiddenApps.isEmpty)
+        #expect(NocciSettings(defaults: defaults).hiddenApps.isEmpty)
+    }
 }

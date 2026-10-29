@@ -28,13 +28,15 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
 
     private let settings: NocciSettings
     private let plugins: [PluginInfo]
+    private let store: NotificationStore
     private let onPreviewChange: (PanelController.Preview?) -> Void
     private let model = PreviewModel()
     private var window: NSWindow?
 
-    init(settings: NocciSettings, plugins: [PluginInfo], onPreviewChange: @escaping (PanelController.Preview?) -> Void) {
+    init(settings: NocciSettings, plugins: [PluginInfo], store: NotificationStore, onPreviewChange: @escaping (PanelController.Preview?) -> Void) {
         self.settings = settings
         self.plugins = plugins
+        self.store = store
         self.onPreviewChange = onPreviewChange
         super.init()
         model.onChange = { [weak self] preview in
@@ -68,7 +70,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         window.title = "Nocci Settings"
         window.isReleasedWhenClosed = false
         window.delegate = self
-        window.contentView = NSHostingView(rootView: SettingsView(settings: settings, model: model, plugins: plugins))
+        window.contentView = NSHostingView(rootView: SettingsView(settings: settings, model: model, plugins: plugins, store: store))
         window.center()
         return window
     }
@@ -79,6 +81,7 @@ private struct SettingsView: View {
     @Bindable var settings: NocciSettings
     @Bindable var model: PreviewModel
     let plugins: [PluginInfo]
+    let store: NotificationStore
 
     var body: some View {
         Form {
@@ -133,6 +136,40 @@ private struct SettingsView: View {
                 Text("Plugins")
             } footer: {
                 Text("Drag to reorder. When the island opens, plugins appear top to bottom in this order. Media asks for Automation (Music, Spotify) or Accessibility (other apps) permission the first time you use its controls.")
+            }
+
+            Section {
+                let apps = store.knownApps
+                if apps.isEmpty {
+                    Text("No notifications yet.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(apps, id: \.bundleID) { app in
+                        Toggle(isOn: Binding(
+                            get: { !settings.hiddenApps.contains(app.bundleID) },
+                            set: { shown in
+                                if shown { settings.hiddenApps.remove(app.bundleID) } else { settings.hiddenApps.insert(app.bundleID) }
+                            }
+                        )) {
+                            Label {
+                                Text(app.name)
+                            } icon: {
+                                if let icon = AppInfo.icon(for: app.bundleID) {
+                                    Image(nsImage: icon)
+                                        .resizable()
+                                        .frame(width: 16, height: 16)
+                                } else {
+                                    Image(systemName: "app")
+                                        .frame(width: 16, height: 16)
+                                }
+                            }
+                        }
+                    }
+                }
+            } header: {
+                Text("Apps")
+            } footer: {
+                Text("Only apps that have sent a notification are listed. Hidden apps don't alert or appear in the list.")
             }
 
             Section {

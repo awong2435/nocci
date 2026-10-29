@@ -37,6 +37,10 @@ final class MediaPlugin: NocciPlugin {
     private(set) var hasTrack = false
     /// Whether the shown track is playing. Changes only when that flips.
     private(set) var isPlaying = false
+    /// A running Music or Spotify that Nocci hasn't asked to control yet; the section offers a button to ask.
+    private(set) var connectableApp: MediaApp?
+    /// A running Music or Spotify the user said no to; the section links to Automation settings.
+    private(set) var deniedApp: MediaApp?
 
     private var controlNote: String?
     private var automationNote: String?
@@ -75,6 +79,8 @@ final class MediaPlugin: NocciPlugin {
             noteTask = nil
             systemVolume.stop()
             setTrack(nil)
+            connectableApp = nil
+            deniedApp = nil
             artwork = nil
             tint = ArtworkTint.fallback
             volume = nil
@@ -140,6 +146,22 @@ final class MediaPlugin: NocciPlugin {
             if let code = await client.seek(to: target, in: current.app) {
                 reportControlError(code, app: current.app)
             }
+        }
+    }
+
+    /// Asks macOS for permission to control `connectableApp` (the consent dialog), then reads it right away.
+    func connect() {
+        guard let app = connectableApp else { return }
+        Task {
+            _ = await client.permission(for: app, ask: true)
+            await poll()
+        }
+    }
+
+    /// Opens System Settings › Privacy & Security › Automation, where a "no" can be changed.
+    func openAutomationSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation") {
+            NSWorkspace.shared.open(url)
         }
     }
 
@@ -216,6 +238,7 @@ final class MediaPlugin: NocciPlugin {
         var playing: (MediaApp, NowPlayingSnapshot)?
         var paused: (MediaApp, NowPlayingSnapshot)?
         var deniedApp: MediaApp?
+        var connectableApp: MediaApp?
         for app in MediaApp.allCases {
             switch await client.permission(for: app, ask: false) {
             case .granted:
@@ -223,7 +246,10 @@ final class MediaPlugin: NocciPlugin {
             case .denied:
                 deniedApp = deniedApp ?? app
                 continue
-            case .notAsked, .notRunning:
+            case .notAsked:
+                connectableApp = connectableApp ?? app
+                continue
+            case .notRunning:
                 continue
             }
             switch await client.poll(app) {
@@ -240,6 +266,8 @@ final class MediaPlugin: NocciPlugin {
             }
         }
         guard isActive else { return }
+        if self.connectableApp != connectableApp { self.connectableApp = connectableApp }
+        if self.deniedApp != deniedApp { self.deniedApp = deniedApp }
         guard let (app, snapshot) = playing ?? paused else {
             setTrack(nil)
             await showArtwork(key: nil, app: nil)

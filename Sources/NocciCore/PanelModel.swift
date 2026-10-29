@@ -27,8 +27,8 @@ public final class PanelModel {
     public func receive(_ item: NotificationItem) {
         let isNew = !store.allItems.contains { $0.id == item.id }
         store.ingest([item])
-        // While the list is open, new notifications just appear in it.
-        guard isNew, !store.dismissedIDs.contains(item.id), state != .list else { return }
+        // Hidden apps and dismissed notifications don't alert. While the list is open, new ones just appear in it.
+        guard isNew, store.isVisible(item), state != .list else { return }
         state = .alert(item.id)
         scheduleExpiry(for: item.id)
     }
@@ -63,6 +63,15 @@ public final class PanelModel {
     /// Counter when anything is unread, otherwise hidden.
     private var restingState: PanelState {
         store.unreadCount > 0 ? .counter : .hidden
+    }
+
+    /// Dismisses a notification: it leaves the list and stops counting as unread. If it's the alert showing,
+    /// the alert collapses.
+    public func dismiss(id: NotificationItem.ID) {
+        store.dismiss(id: id)
+        if state == .alert(id) {
+            expireAlert(id: id)
+        }
     }
 
     /// Hides the current alert now, without dismissing the notification.

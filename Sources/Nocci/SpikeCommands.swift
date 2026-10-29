@@ -27,6 +27,29 @@ enum SpikeCommands {
             return true
         }
         #endif
+        if arguments.contains("--automation-status") {
+            // Reads the Automation permission for Music and Spotify without ever asking.
+            let semaphore = DispatchSemaphore(value: 0)
+            nonisolated(unsafe) var lines: [String] = []
+            Task.detached {
+                let client = NowPlayingClient()
+                for app in MediaApp.allCases {
+                    let permission = await client.permission(for: app, ask: false)
+                    // Outcome type and error code only; never track details.
+                    let outcome: String = switch await client.poll(app) {
+                    case .track(let snapshot): "track (\(snapshot.isPlaying ? "playing" : "paused"))"
+                    case .idle: "idle"
+                    case .denied: "denied"
+                    case .failed(let code): "failed \(code)"
+                    }
+                    lines.append("\(app.displayName): permission \(permission), poll \(outcome)")
+                }
+                semaphore.signal()
+            }
+            semaphore.wait()
+            print(lines.joined(separator: "\n"))
+            return true
+        }
         if let index = arguments.firstIndex(of: "--print-recent") {
             let limit = arguments.dropFirst(index + 1).first.flatMap(Int.init) ?? 10
             run {

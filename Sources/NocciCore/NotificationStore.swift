@@ -18,9 +18,27 @@ public final class NotificationStore {
         self.dismissedIDs = dismissedIDs
     }
 
+    /// Bundle IDs of apps whose notifications are hidden. Hidden items stay in `allItems`.
+    public var hiddenApps: Set<String> = []
+
+    /// Whether an item should be shown: not dismissed, and its app isn't hidden.
+    public func isVisible(_ item: NotificationItem) -> Bool {
+        !dismissedIDs.contains(item.id) && !hiddenApps.contains(item.appBundleID)
+    }
+
     /// Visible notifications, newest first.
     public var items: [NotificationItem] {
-        allItems.filter { !dismissedIDs.contains($0.id) }
+        allItems.filter(isVisible)
+    }
+
+    /// Every app that appears in `allItems` (hidden or not), once each, sorted by name.
+    public var knownApps: [(bundleID: String, name: String)] {
+        var seen: Set<String> = []
+        var apps: [(bundleID: String, name: String)] = []
+        for item in allItems where seen.insert(item.appBundleID).inserted {
+            apps.append((bundleID: item.appBundleID, name: item.appName))
+        }
+        return apps.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
     /// Visible notifications grouped by app. Groups are ordered by their newest notification,

@@ -47,7 +47,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func showSettings() {
         if settingsWindow == nil {
             let pluginInfo = plugins.map { PluginInfo(id: $0.id, name: $0.name, systemImage: $0.systemImage) }
-            settingsWindow = SettingsWindowController(settings: settings, plugins: pluginInfo) { [weak self] preview in
+            settingsWindow = SettingsWindowController(settings: settings, plugins: pluginInfo, store: model.store) { [weak self] preview in
                 self?.panelController?.preview = preview
             }
         }
@@ -69,10 +69,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Keeps the model's alert duration in step with Settings.
+    /// Keeps the model's alert duration and the store's hidden apps in step with Settings.
     private func applyAlertDurationOnChange() {
         withObservationTracking {
             model.alertDuration = settings.alertDuration
+            model.store.hiddenApps = settings.hiddenApps
         } onChange: { [weak self] in
             Task { @MainActor in self?.applyAlertDurationOnChange() }
         }

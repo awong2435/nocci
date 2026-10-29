@@ -58,7 +58,8 @@ enum NowPlayingPoll: Sendable {
     case track(NowPlayingSnapshot)
     case idle
     case denied
-    case failed
+    /// The script failed, with AppleScript's error number.
+    case failed(Int)
 }
 
 /// Whether Nocci may send Apple Events to an app.
@@ -113,7 +114,7 @@ final class NowPlayingClient: @unchecked Sendable {
         return await onQueue { [self] in
             switch run(source, cache: true) {
             case .failure(let code):
-                return code == Self.notAuthorized ? .denied : .failed
+                return code == Self.notAuthorized ? .denied : .failed(code)
             case .success(let list):
                 guard list.numberOfItems >= 5,
                       let state = list.atIndex(1)?.stringValue, state != "stopped" else { return .idle }
@@ -206,6 +207,7 @@ final class NowPlayingClient: @unchecked Sendable {
     }
 
     /// Returns {state, name, artist, duration ms, position ms}. Rethrows only -1743 so denial is detectable.
+    /// (Variable names avoid `st`, which AppleScript won't accept as an identifier.)
     private static func pollScript(_ app: MediaApp) -> String {
         let (durationExpr, positionExpr) = switch app {
         case .music: ("((duration of t) * 1000) as integer", "(player position * 1000) as integer")
@@ -214,12 +216,12 @@ final class NowPlayingClient: @unchecked Sendable {
         return guarded(app, """
             tell application id "\(app.bundleID)"
             	try
-            		set st to player state
-            		if st is stopped then return {"stopped", "", "", 0, 0}
+            		set playerState to player state
+            		if playerState is stopped then return {"stopped", "", "", 0, 0}
             		set t to current track
-            		set s to "paused"
-            		if st is playing then set s to "playing"
-            		return {s, name of t, artist of t, \(durationExpr), \(positionExpr)}
+            		set stateName to "paused"
+            		if playerState is playing then set stateName to "playing"
+            		return {stateName, name of t, artist of t, \(durationExpr), \(positionExpr)}
             	on error errMsg number errNum
             		if errNum is -1743 then error errMsg number errNum
             		return {"stopped", "", "", 0, 0}

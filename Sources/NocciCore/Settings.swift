@@ -19,6 +19,8 @@ public enum SettingsKey {
     public static let enabledPlugins = "enabledPlugins"
     /// Dictionary of app bundle ID to Bool.
     public static let enabledApps = "enabledApps"
+    /// Array of bundle IDs of apps whose notifications are hidden.
+    public static let hiddenApps = "hiddenApps"
 
     // State, not settings. The only things Nocci saves about notifications (PLAN.md section 2E).
     /// Date the list was last opened.
@@ -134,6 +136,11 @@ public final class NocciSettings {
         didSet { defaults.set(Array(enabledPlugins).sorted(), forKey: SettingsKey.enabledPlugins) }
     }
 
+    /// Bundle IDs of apps whose notifications are hidden (no alerts, not in the list).
+    public var hiddenApps: Set<String> {
+        didSet { defaults.set(Array(hiddenApps).sorted(), forKey: SettingsKey.hiddenApps) }
+    }
+
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         alertDuration = defaults.string(forKey: SettingsKey.alertDuration).flatMap(AlertDuration.init(rawValue:)) ?? .tenSeconds
@@ -148,6 +155,7 @@ public final class NocciSettings {
         fontScale = min(max(scale, Self.fontScaleRange.lowerBound), Self.fontScaleRange.upperBound)
         pluginOrder = Self.completeOrder(defaults.stringArray(forKey: SettingsKey.pluginOrder) ?? [])
         enabledPlugins = defaults.stringArray(forKey: SettingsKey.enabledPlugins).map(Set.init) ?? Self.defaultEnabledPlugins
+        hiddenApps = defaults.stringArray(forKey: SettingsKey.hiddenApps).map(Set.init) ?? []
     }
 
     /// A saved order with any plugins added since it was saved appended at the end, and unknown IDs dropped.
@@ -177,5 +185,6 @@ public final class NocciSettings {
         fontScale = 1
         pluginOrder = Self.defaultPluginOrder
         enabledPlugins = Self.defaultEnabledPlugins
+        hiddenApps = []
     }
 }

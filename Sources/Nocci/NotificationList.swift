@@ -45,6 +45,7 @@ struct NotificationList: View {
 
                     ForEach(group.items) { item in
                         NotificationRow(item: item)
+                            .transition(.opacity.combined(with: .move(edge: .leading)))
                     }
                 }
             }
@@ -52,6 +53,7 @@ struct NotificationList: View {
         .padding(.horizontal, 16)
         .padding(.bottom, 16)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .animation(.spring(duration: 0.3), value: store.items.map(\.id))
     }
 
     /// Height the list needs at `width` to show everything without scrolling.
@@ -67,6 +69,8 @@ struct NotificationList: View {
 private struct NotificationRow: View {
     let item: NotificationItem
     @Environment(\.nocciFontScale) private var scale
+    @Environment(\.swipeTracker) private var swipeTracker
+    @Environment(\.notificationActions) private var actions
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -95,6 +99,10 @@ private struct NotificationRow: View {
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+        // Click opens the app; swipe sideways dismisses.
+        .contentShape(Rectangle())
+        .onTapGesture { actions.open(item) }
+        .swipeToDismiss(item.id, axis: .horizontal, tracker: swipeTracker)
     }
 
     /// Time for today's notifications, otherwise the date and time.
