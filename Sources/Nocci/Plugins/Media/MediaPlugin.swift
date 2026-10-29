@@ -278,16 +278,26 @@ final class MediaPlugin: NocciPlugin {
         // while Music or Spotify is playing, since that's what would be shown anyway.
         var system: SystemNowPlaying.Info?
         if playing == nil, let info = await systemNowPlaying.read(), !info.title.isEmpty {
-            let scriptedTrack = [paused?.0].compactMap { $0 }.contains { $0.bundleID == info.bundleID }
-            if !scriptedTrack { system = info }
+            system = info
         }
 
         guard isActive else { return }
         if self.connectableApp != connectableApp { self.connectableApp = connectableApp }
         if self.deniedApp != deniedApp { self.deniedApp = deniedApp }
 
-        // A playing track beats a paused one; Music/Spotify (artwork, seeking) beat other apps.
-        if let (app, snapshot) = playing ?? (system?.isPlaying == true ? nil : paused) {
+        // A playing Music/Spotify track wins (artwork, seeking). Otherwise the system's Now Playing app decides:
+        // it's the app that last had media, and the one the play key controls, so pausing YouTube keeps showing
+        // YouTube rather than an older paused Spotify track. Music/Spotify still use AppleScript when it's them.
+        let scripted: (MediaApp, NowPlayingSnapshot)? = if let playing {
+            playing
+        } else if let system {
+            paused.flatMap { $0.0.bundleID == system.bundleID ? $0 : nil }
+        } else {
+            paused
+        }
+        if scripted != nil { system = nil }
+
+        if let (app, snapshot) = scripted {
             setAutomationNote(nil)
             let new = MediaTrack(app: app, bundleID: app.bundleID, appName: app.displayName,
                                  title: snapshot.title, artist: snapshot.artist,
