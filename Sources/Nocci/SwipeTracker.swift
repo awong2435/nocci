@@ -149,6 +149,8 @@ private struct SwipeToDismiss: ViewModifier {
 /// What the list and alert can do with a notification. Supplied by the panel through the environment.
 struct NotificationActions {
     var open: (NotificationItem) -> Void = { _ in }
+    /// Dismisses notifications (Clear All, or one app's group).
+    var dismiss: ([NotificationItem.ID]) -> Void = { _ in }
 }
 
 extension EnvironmentValues {

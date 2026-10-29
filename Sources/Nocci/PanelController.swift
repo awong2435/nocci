@@ -115,7 +115,10 @@ final class PanelController: NSObject {
         self.openSettings = openSettings
         super.init()
 
-        let actions = NotificationActions(open: { [weak self] item in self?.open(item) })
+        let actions = NotificationActions(
+            open: { [weak self] item in self?.open(item) },
+            dismiss: { [weak model] ids in ids.forEach { model?.dismiss(id: $0) } }
+        )
         let hostingView = FirstClickHostingView(rootView: NotchRootView(
             presentation: presentation,
             store: model.store,
@@ -198,6 +201,11 @@ final class PanelController: NSObject {
                 _ = plugin.hasContent
                 _ = plugin.showsCompact
                 // Media's section changes height between its idle row and the full player, and with a message line.
+                // The list grows or shrinks as groups expand and cards are dismissed.
+                if let notifications = plugin as? NotificationsPlugin {
+                    _ = notifications.listState.expanded
+                    _ = notifications.store.items.count
+                }
                 if let media = plugin as? MediaPlugin {
                     _ = media.hasTrack
                     _ = media.message

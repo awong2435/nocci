@@ -106,6 +106,26 @@ enum SpikeCommands {
             Color.clear.frame(width: 209)
             MediaCompactTrailing(plugin: playing).frame(width: compactWingWidth)
         }.frame(height: 38).background(.black, in: Capsule()), "media-compact.png")
+
+        // The list, with made-up notifications (never real ones): collapsed, then with Slack expanded.
+        let store = NotificationStore(lastOpened: .distantPast)
+        let now = Date()
+        func sample(_ id: String, _ app: String, _ name: String, _ title: String, _ subtitle: String?, _ body: String, minutesAgo: Double) -> NotificationItem {
+            NotificationItem(id: id, appBundleID: app, appName: name, title: title, subtitle: subtitle, body: body,
+                             date: now.addingTimeInterval(-minutesAgo * 60))
+        }
+        store.ingest([
+            sample("1", "com.apple.ScriptEditor2", "Script Editor", "Build finished", nil, "All tests passed.", minutesAgo: 16),
+            sample("2", "com.apple.ScriptEditor2", "Script Editor", "Retest", nil, "Watch the notch: this card should grow out of it.", minutesAgo: 54),
+            sample("3", "com.apple.ScriptEditor2", "Script Editor", "Test", nil, "Hello from Nocci", minutesAgo: 57),
+            sample("4", "com.tinyspeck.slackmacgap", "Slack", "Team", "#general", "Lunch at noon?", minutesAgo: 33),
+            sample("5", "com.tinyspeck.slackmacgap", "Slack", "Team", "#random", "Look at this.", minutesAgo: 40),
+            sample("6", "com.anthropic.claudefordesktop", "Claude", "Scheduled task completed", nil, "Daily wrapup", minutesAgo: 25),
+        ])
+        let listState = NotificationListState()
+        try write(island(NotificationList(store: store, state: listState, notchHeight: 0, scrolls: false), width: 560), "list-collapsed.png")
+        listState.expanded = ["com.apple.ScriptEditor2"]
+        try write(island(NotificationList(store: store, state: listState, notchHeight: 0, scrolls: false), width: 560), "list-expanded.png")
         return "Rendered to \(directory)"
     }
     #endif

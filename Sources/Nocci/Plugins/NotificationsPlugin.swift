@@ -11,14 +11,16 @@ final class NotificationsPlugin: NocciPlugin {
     let hasContent = true
     let showsCompact = false
 
-    private let store: NotificationStore
+    let store: NotificationStore
+    /// Which app groups are expanded; kept here so it survives the island closing and reopening.
+    let listState = NotificationListState()
 
     init(store: NotificationStore) {
         self.store = store
     }
 
     func makeSection() -> AnyView {
-        AnyView(NotificationList(store: store, notchHeight: 0, scrolls: false))
+        AnyView(NotificationList(store: store, state: listState, notchHeight: 0, scrolls: false))
     }
 
     func makeCompactLeading() -> AnyView { AnyView(EmptyView()) }
