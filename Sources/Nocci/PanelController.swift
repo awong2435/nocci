@@ -12,21 +12,22 @@ private let log = Logger(subsystem: "local.nocci", category: "panel")
 final class PanelPresentation {
     enum Content: Equatable {
         case alert(item: NotificationItem, scrolls: Bool, layoutSize: CGSize)
-        case counter(layoutSize: CGSize)
+        /// The island tucked behind the notch, with the unread indicator beside it.
+        case counter(layoutSize: CGSize, style: IndicatorStyle, side: IndicatorSide)
         case list(layoutSize: CGSize)
 
         /// The size the content lays out at: the island's final size, so text doesn't reflow while it grows.
         var layoutSize: CGSize {
             switch self {
-            case .alert(_, _, let size), .counter(let size), .list(let size): size
+            case .alert(_, _, let size), .counter(let size, _, _), .list(let size): size
             }
         }
 
-        /// The window's size: the island, plus room beside the notch for the unread light.
+        /// The window's size: the island, plus room beside the notch for the unread indicator.
         var windowSize: CGSize {
             switch self {
-            case .counter(let size):
-                CGSize(width: size.width + 2 * CounterBadge.sideRoom, height: max(size.height, CounterBadge.topInset + CounterBadge.diameter + 4))
+            case .counter(let size, let style, _):
+                CGSize(width: size.width + 2 * CounterBadge.sideRoom(for: style), height: max(size.height, CounterBadge.topInset + 16))
             case .alert, .list:
                 layoutSize
             }
@@ -53,26 +54,51 @@ final class PanelPresentation {
     var notchHeight: CGFloat = 0
 }
 
-/// Turns `PanelModel.state` into the notch panel's frame, visibility, and animation.
+/// Turns `PanelModel.state` and the settings into the island's frame, visibility, and animation.
 @MainActor
 final class PanelController: NSObject {
-    /// Default alert width (PLAN.md: about 500 to 600 points). M6 makes it adjustable.
-    static let alertWidth: CGFloat = 560
+    /// A fixed state shown while the settings window is open, so changes can be seen as they're made.
+    enum Preview: String, CaseIterable {
+        case alert, list, light
+    }
+
     /// Width of the concave ears at the island's top corners.
     static let ear: CGFloat = 6
 
+    /// Shown in the alert preview. Not a real notification.
+    private static let sampleAlert = NotificationItem(
+        id: "nocci-preview",
+        appBundleID: "local.nocci",
+        appName: "Nocci",
+        title: "Preview",
+        subtitle: "This is how alerts look",
+        body: "Change the settings and watch this card update. Close Settings to go back to your notifications.",
+        date: Date()
+    )
+
+    var preview: Preview? {
+        didSet { if preview != oldValue { update(logAlert: false) } }
+    }
+
     private let model: PanelModel
+    private let settings: NocciSettings
+    private let openSettings: () -> Void
     private let panel = NotchPanel()
     private let presentation = PanelPresentation()
     /// Bumped on every update so a finishing animation can tell it's been superseded.
     private var generation = 0
     private var hoverTracker: HoverTracker?
+    private var rightClickMonitors: [Any] = []
+    /// The screen the island is currently on.
+    private var currentScreenID: CGDirectDisplayID?
 
-    init(model: PanelModel) {
+    init(model: PanelModel, settings: NocciSettings, openSettings: @escaping () -> Void) {
         self.model = model
+        self.settings = settings
+        self.openSettings = openSettings
         super.init()
 
-        let hostingView = NSHostingView(rootView: NotchRootView(
+        let hostingView = FirstClickHostingView(rootView: NotchRootView(
             presentation: presentation,
             store: model.store,
             ear: Self.ear,
@@ -93,8 +119,10 @@ final class PanelController: NSObject {
                 }
             }
         )
+        watchRightClicks()
 
         trackState()
+        trackSettings()
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(screensChanged),
@@ -114,23 +142,83 @@ final class PanelController: NSObject {
         }
     }
 
-    /// Hovering the notch opens the list (as does the counter, which sits just below it).
-    /// Once open, the list stays while the mouse is over the notch or the panel.
-    private func hoverAction(at point: NSPoint) -> HoverTracker.Action? {
-        guard let screen = NSScreen.nocciTarget else { return nil }
-        // One extra point upward so the very top pixel row counts.
-        let hotZone = screen.notchGeometry
+    private func trackSettings() {
+        withObservationTracking {
+            _ = settings.panelWidth
+            _ = settings.indicatorStyle
+            _ = settings.indicatorSide
+            _ = settings.screenChoice
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                self?.update(logAlert: false)
+                self?.trackSettings()
+            }
+        }
+    }
+
+    /// Right-clicking the notch (or the island) opens Settings. Mouse monitors need no permission.
+    private func watchRightClicks() {
+        let global = NSEvent.addGlobalMonitorForEvents(matching: .rightMouseDown) { [weak self] _ in
+            self?.rightClicked(at: NSEvent.mouseLocation)
+        }
+        let local = NSEvent.addLocalMonitorForEvents(matching: .rightMouseDown) { [weak self] event in
+            self?.rightClicked(at: NSEvent.mouseLocation)
+            return event
+        }
+        rightClickMonitors = [global, local].compactMap { $0 }
+    }
+
+    private func rightClicked(at point: NSPoint) {
+        guard let screen = targetScreen() else { return }
+        if hotZone(on: screen).contains(point) || (panel.isVisible && panel.frame.contains(point)) {
+            openSettings()
+        }
+    }
+
+    // MARK: - Screens
+
+    /// The screen chosen in Settings. Falls back to the notched or main screen if the chosen one isn't connected.
+    private func targetScreen() -> NSScreen? {
+        let notched = NSScreen.screens.first { $0.safeAreaInsets.top > 0 } ?? NSScreen.screens.first
+        switch settings.screenChoice {
+        case .notched:
+            return notched
+        case .main:
+            return NSScreen.screens.first
+        case .followMouse:
+            let mouse = NSEvent.mouseLocation
+            return NSScreen.screens.first { $0.frame.contains(mouse) } ?? notched
+        case .named(let name):
+            return NSScreen.screens.first { $0.localizedName == name } ?? notched
+        }
+    }
+
+    /// The notch, or a strip at the top center of screens without one, with one extra point upward so the
+    /// very top pixel row counts.
+    private func hotZone(on screen: NSScreen) -> CGRect {
+        screen.notchGeometry
             .hotZone(fallbackSize: CGSize(width: 200, height: NSStatusBar.system.thickness))
             .insetBy(dx: 0, dy: -1)
-        let overPanel = panel.isVisible && panel.frame.contains(point)
+    }
 
+    /// Hovering the notch opens the list. Once open, it stays while the mouse is over the notch or the island.
+    private func hoverAction(at point: NSPoint) -> HoverTracker.Action? {
+        guard preview == nil, let screen = targetScreen() else { return nil }
+
+        // Following the mouse: move the light (or nothing) to the screen the mouse is now on.
+        if screen.displayID != currentScreenID, model.state == .counter || model.state == .hidden {
+            update(logAlert: false)
+        }
+
+        let inHotZone = hotZone(on: screen).contains(point)
+        let overPanel = panel.isVisible && panel.frame.contains(point)
         switch model.state {
         case .list:
-            return hotZone.contains(point) || overPanel ? nil : .close
+            return inHotZone || overPanel ? nil : .close
         case .counter:
-            return hotZone.contains(point) || overPanel ? .open : nil
+            return inHotZone || overPanel ? .open : nil
         case .hidden, .alert:
-            return hotZone.contains(point) ? .open : nil
+            return inHotZone ? .open : nil
         }
     }
 
@@ -138,32 +226,58 @@ final class PanelController: NSObject {
         update(logAlert: false)
     }
 
+    // MARK: - Layout
+
     private func update(logAlert: Bool = true) {
-        guard let screen = NSScreen.nocciTarget else { return }
+        guard let screen = targetScreen() else { return }
         let geometry = screen.notchGeometry
         let notchHeight = geometry.notchSize.height
-        let wideWidth = Self.alertWidth + 2 * Self.ear
+        let contentWidth = CGFloat(settings.panelWidth)
+        let wideWidth = contentWidth + 2 * Self.ear
 
-        switch model.state {
+        // Moving to another screen: drop what's showing so the island grows from the new screen's notch.
+        if screen.displayID != currentScreenID {
+            generation += 1
+            panel.orderOut(nil)
+            currentScreenID = screen.displayID
+        }
+
+        let state: PanelState = switch preview {
+        case .alert: .alert(Self.sampleAlert.id)
+        case .list: .list
+        case .light: .counter
+        case nil: model.state
+        }
+
+        switch state {
         case .alert:
-            guard let item = model.currentAlert else { return morph(to: nil, geometry: geometry) }
+            guard let item = preview == .alert ? Self.sampleAlert : model.currentAlert else {
+                return morph(to: nil, geometry: geometry)
+            }
             let maxHeight = min(screen.frame.height * 0.6, 520)
-            let naturalHeight = AlertCard.naturalHeight(of: item, width: Self.alertWidth, notchHeight: notchHeight)
+            let naturalHeight = AlertCard.naturalHeight(of: item, width: contentWidth, notchHeight: notchHeight)
             let size = CGSize(width: wideWidth, height: min(naturalHeight, maxHeight))
             morph(to: .alert(item: item, scrolls: naturalHeight > maxHeight, layoutSize: size), radius: 22, geometry: geometry)
 
             // ID and latency only; never notification text.
-            guard logAlert else { return }
+            guard logAlert, preview == nil else { return }
             let latency = Date().timeIntervalSince(item.date)
             log.notice("alert id=\(item.id, privacy: .public) app=\(item.appBundleID, privacy: .public) latency=\(latency, format: .fixed(precision: 2), privacy: .public)s")
 
         case .counter:
-            // The island tucks back behind the notch; the light sits beside it.
-            morph(to: .counter(layoutSize: restingSize(geometry)), geometry: geometry)
+            // The island tucks back behind the notch; the indicator sits beside it. Screens without a notch show
+            // nothing at rest: alerts still drop in, and hovering the top center still opens the list.
+            guard settings.indicatorStyle != .off, geometry.hasNotch else { return morph(to: nil, geometry: geometry) }
+            let counter = PanelPresentation.Content.counter(
+                layoutSize: restingSize(geometry),
+                style: settings.indicatorStyle,
+                side: settings.indicatorSide
+            )
+            morph(to: counter, geometry: geometry)
 
         case .list:
             let maxHeight = min(screen.frame.height * 0.75, 700)
-            let naturalHeight = NotificationList.naturalHeight(of: model.store, width: Self.alertWidth, notchHeight: notchHeight)
+            let naturalHeight = NotificationList.naturalHeight(of: model.store, width: contentWidth, notchHeight: notchHeight)
             morph(to: .list(layoutSize: CGSize(width: wideWidth, height: min(naturalHeight, maxHeight))), radius: 22, geometry: geometry)
 
         case .hidden:
@@ -199,7 +313,7 @@ final class PanelController: NSObject {
         let current = panel.isVisible ? panel.frame.size : resting
         let canvas = CGSize(width: max(current.width, targetWindow.width), height: max(current.height, targetWindow.height))
         panel.setFrame(frame(for: canvas, geometry), display: false)
-        // The light is only an indicator; let clicks beside the notch reach the menu bar. Hover still opens the list.
+        // The indicator is only an indicator; let clicks beside the notch reach the menu bar. Hover still opens the list.
         panel.ignoresMouseEvents = content?.isCounter ?? false
         panel.orderFrontRegardless()
 
@@ -250,15 +364,22 @@ private struct NotchRootView: View {
             }
             .background(shape.fill(.black))
             .clipShape(shape)
-            .overlay(alignment: .topTrailing) {
-                if presentation.content?.isCounter == true {
-                    // Just right of the notch, near the top. The island's ears sit inside the notch at rest.
-                    CounterBadge()
-                        .offset(x: CounterBadge.gap + CounterBadge.diameter, y: CounterBadge.topInset)
+            .overlay(alignment: indicatorAlignment) {
+                if case .counter(_, let style, let side) = presentation.content {
+                    // Beside the notch, near the top. The island's ears sit inside the notch at rest.
+                    CounterBadge(style: style, count: store.unreadCount)
+                        .fixedSize()
+                        .alignmentGuide(side == .right ? .leading : .trailing) { _ in 0 }
+                        .offset(x: side == .right ? CounterBadge.gap : -CounterBadge.gap, y: CounterBadge.topInset)
                         .transition(.scale.combined(with: .opacity))
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    /// The indicator hangs off the island's right or left top corner.
+    private var indicatorAlignment: Alignment {
+        if case .counter(_, _, .left) = presentation.content { .topLeading } else { .topTrailing }
     }
 
     @ViewBuilder
@@ -266,6 +387,8 @@ private struct NotchRootView: View {
         switch content {
         case .alert(let item, let scrolls, _):
             AlertCard(item: item, notchHeight: presentation.notchHeight, scrolls: scrolls)
+                // The whole card, not just its text.
+                .contentShape(Rectangle())
                 // Temporary: clicking hides the alert. M7 adds swipe to dismiss, M8 makes click open the app.
                 .onTapGesture(perform: onTapAlert)
         case .counter:
@@ -279,11 +402,6 @@ private struct NotchRootView: View {
 }
 
 extension NSScreen {
-    /// The built-in notched screen if there is one, otherwise the menu bar screen.
-    static var nocciTarget: NSScreen? {
-        screens.first { $0.safeAreaInsets.top > 0 } ?? screens.first
-    }
-
     var notchGeometry: NotchGeometry {
         NotchGeometry(
             screenFrame: frame,
@@ -291,5 +409,9 @@ extension NSScreen {
             auxiliaryLeftWidth: auxiliaryTopLeftArea?.width,
             auxiliaryRightWidth: auxiliaryTopRightArea?.width
         )
+    }
+
+    var displayID: CGDirectDisplayID? {
+        deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
     }
 }

@@ -7,11 +7,8 @@ private let log = Logger(subsystem: "local.nocci", category: "app")
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private let model = PanelModel(
-        store: AppDelegate.restoredStore(),
-        alertDuration: UserDefaults.standard.string(forKey: SettingsKey.alertDuration)
-            .flatMap(AlertDuration.init(rawValue:)) ?? .tenSeconds
-    )
+    private let settings = NocciSettings()
+    private lazy var model = PanelModel(store: AppDelegate.restoredStore(), alertDuration: settings.alertDuration)
 
     /// Restores the last-opened time and dismissed IDs. On first launch, everything already in
     /// Notification Center counts as read, so the counter starts at zero.
@@ -26,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return NotificationStore(lastOpened: lastOpened, dismissedIDs: dismissed)
     }
     private var panelController: PanelController?
+    private var settingsWindow: SettingsWindowController?
     private var statusItem: NSStatusItem?
     private let statusLine = NSMenuItem(title: "Starting…", action: nil, keyEquivalent: "")
     private var listenTask: Task<Void, Never>?
@@ -33,10 +31,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Menu bar only, no Dock icon (LSUIElement covers the bundled app; this covers `swift run`).
         NSApp.setActivationPolicy(.accessory)
-        panelController = PanelController(model: model)
+        panelController = PanelController(model: model, settings: settings) { [weak self] in
+            self?.showSettings()
+        }
         setUpStatusItem()
         saveReadStateOnChange()
+        applyAlertDurationOnChange()
         startListening()
+    }
+
+    @objc private func showSettings() {
+        if settingsWindow == nil {
+            settingsWindow = SettingsWindowController(settings: settings) { [weak self] preview in
+                self?.panelController?.preview = preview
+            }
+        }
+        settingsWindow?.show()
+    }
+
+    /// Keeps the model's alert duration in step with Settings.
+    private func applyAlertDurationOnChange() {
+        withObservationTracking {
+            model.alertDuration = settings.alertDuration
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.applyAlertDurationOnChange() }
+        }
     }
 
     /// Nocci's panel shouldn't activate the app. Logged to diagnose clicks that do.
@@ -98,39 +117,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(statusLine)
         menu.addItem(.separator())
 
-        let durationItem = NSMenuItem(title: "Alert Duration", action: nil, keyEquivalent: "")
-        let durationMenu = NSMenu()
-        for duration in AlertDuration.allCases {
-            let option = NSMenuItem(title: duration.title, action: #selector(chooseDuration(_:)), keyEquivalent: "")
-            option.target = self
-            option.representedObject = duration.rawValue
-            option.state = duration == model.alertDuration ? .on : .off
-            durationMenu.addItem(option)
-        }
-        durationItem.submenu = durationMenu
-        menu.addItem(durationItem)
+        let settingsItem = NSMenuItem(title: "Settings…", action: #selector(showSettings), keyEquivalent: ",")
+        settingsItem.target = self
+        menu.addItem(settingsItem)
 
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Nocci", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         item.menu = menu
         statusItem = item
-    }
-
-    @objc private func chooseDuration(_ sender: NSMenuItem) {
-        guard let raw = sender.representedObject as? String, let duration = AlertDuration(rawValue: raw) else { return }
-        model.alertDuration = duration
-        UserDefaults.standard.set(raw, forKey: SettingsKey.alertDuration)
-        sender.menu?.items.forEach { $0.state = $0 === sender ? .on : .off }
-    }
-}
-
-private extension AlertDuration {
-    var title: String {
-        switch self {
-        case .fiveSeconds: "5 seconds"
-        case .tenSeconds: "10 seconds"
-        case .thirtySeconds: "30 seconds"
-        case .untilDismissed: "Until dismissed"
-        }
     }
 }

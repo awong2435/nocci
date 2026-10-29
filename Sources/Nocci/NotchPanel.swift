@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 
 /// Borderless, non-activating panel that sits over the notch without taking focus.
 final class NotchPanel: NSPanel {
@@ -30,4 +31,10 @@ final class NotchPanel: NSPanel {
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
         frameRect
     }
+}
+
+/// Hosting view for the panel. The panel never becomes key, so every click is a "first" click; accept it so
+/// SwiftUI gestures (tapping an alert) fire instead of the click being used only to focus the window.
+final class FirstClickHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
