@@ -68,6 +68,32 @@ enum SpikeCommands {
             }
             return true
         }
+        if let index = arguments.firstIndex(of: "--nc-close-test") {
+            // Closes the newest N notifications from Script Editor (test notifications) in Notification Center the
+            // way a dismissal in Nocci does, then checks they're gone from the database. Counts only.
+            let count = arguments.dropFirst(index + 1).first.flatMap(Int.init) ?? 2
+            run {
+                let source = try source()
+                let items = try source.recent(limit: 200, now: Date()).filter { $0.appBundleID == "com.apple.scripteditor2" }.prefix(count)
+                guard !items.isEmpty else { return "no Script Editor notifications" }
+                var closed: Int?
+                Task { @MainActor in
+                    closed = await NotificationCenterUI.close(notificationIDs: items.map(\.id), appNames: Set(items.map(\.appName)))
+                }
+                while closed == nil { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
+                var stillThere = items.count
+                for _ in 0..<20 {
+                    RunLoop.main.run(until: Date().addingTimeInterval(0.25))
+                    var existing: Set<String>?
+                    Task { existing = try? await source.existingIDs() }
+                    while existing == nil { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
+                    stillThere = items.filter { existing!.contains($0.id) }.count
+                    if stillThere == 0 { break }
+                }
+                return "asked to close \(items.count), closed \(closed!), still in database after: \(stillThere), moved off-screen: \(NotificationCenterUI.lastHide.map { "\($0.moved)" } ?? "not needed")"
+            }
+            return true
+        }
         if arguments.contains("--nc-windows") {
             // Notification Center's windows with the panel as it is: type, frame, whether movable. Changes nothing.
             run {

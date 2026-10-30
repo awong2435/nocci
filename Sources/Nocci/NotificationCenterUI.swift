@@ -48,43 +48,112 @@ enum NotificationCenterUI {
     // MARK: - Opening a notification
 
     /// Does what clicking the notification in Notification Center does. If it's an on-screen banner, presses it
-    /// directly; otherwise opens the panel, finds the matching entry (expanding `appName`'s collapsed stack if it's
-    /// hidden in one; pressing a stack expands it rather than opening anything), presses it, and makes sure the
-    /// panel closes. Returns false when it can't: no Accessibility, or the notification was cleared.
+    /// directly; otherwise opens the panel off-screen, finds the matching entry (expanding `appName`'s collapsed
+    /// stack if it's hidden in one; pressing a stack expands it rather than opening anything), presses it, and
+    /// makes sure the panel closes. Returns false when it can't: no Accessibility, or the notification was cleared.
     static func open(notificationID: String, appName: String) async -> Bool {
         guard isTrusted else { return false }
         if let banner = entry(matching: notificationID) {
             return press(banner.element)
         }
-        guard let clock = clockItem() else { return false }
-        let wasOpen = isPanelOpen()
-        if !wasOpen {
-            guard press(clock) else { return false }
-            // Out of sight before it slides in: the panel's window only exists once it opens (macOS 26), so catch
-            // it the moment it appears and move it off-screen. The press still works there.
-            lastHide = await movePanelOffScreen()
-            for _ in 0..<20 where !isPanelOpen() { try? await Task.sleep(for: .milliseconds(50)) }
-            // Rows fill in just after the panel reports open.
-            try? await Task.sleep(for: .milliseconds(150))
-        }
-        var target = entry(matching: notificationID)
-        if target == nil {
-            // Hidden in a collapsed stack: expand that app's stacks, then look again.
-            for stack in entries().filter({ $0.isStack && $0.isFrom(appName) }).prefix(3) {
-                _ = press(stack.element)
-            }
-            try? await Task.sleep(for: .milliseconds(400))
-            target = entry(matching: notificationID)
-        }
-        guard let target else {
-            if !wasOpen, isPanelOpen() { _ = press(clock) }
+        guard let session = await openPanelOffScreen() else { return false }
+        guard let target = await find(notificationID, expandingStacksOf: [appName]) else {
+            session.close()
             return false
         }
         let pressed = press(target.element)
         // Pressing normally opens the app and closes the panel; close it if it didn't.
         try? await Task.sleep(for: .milliseconds(300))
-        if !wasOpen, isPanelOpen() { _ = press(clock) }
+        session.close()
         return pressed
+    }
+
+    // MARK: - Closing notifications
+
+    /// Clears notifications from Notification Center, as their Close button would, so dismissing them in Nocci
+    /// keeps the two in step. On-screen banners are closed directly; the rest through the panel, opened
+    /// off-screen. Returns how many were closed; ones already gone or not found are skipped.
+    @discardableResult
+    static func close(notificationIDs: [String], appNames: Set<String>) async -> Int {
+        guard isTrusted, !notificationIDs.isEmpty else { return 0 }
+        var remaining = Set(notificationIDs)
+        var closed = 0
+        for entry in entries() where remaining.contains(normalizedID(entry.identifier) ?? "") && !entry.isStack {
+            if performClose(entry) {
+                closed += 1
+                remaining.remove(normalizedID(entry.identifier) ?? "")
+            }
+        }
+        guard !remaining.isEmpty, let session = await openPanelOffScreen() else { return closed }
+        var expanded = false
+        for id in notificationIDs where remaining.contains(id) {
+            var target = entry(matching: id)
+            if target == nil && !expanded {
+                target = await find(id, expandingStacksOf: appNames)
+                expanded = true
+            }
+            // A collapsed stack whose top is this notification: expand it so the row itself can be closed.
+            if let found = target, found.isStack {
+                _ = press(found.element)
+                try? await Task.sleep(for: .milliseconds(300))
+                target = entries().first { normalizedID($0.identifier) == id && !$0.isStack }
+            }
+            if let target, performClose(target) {
+                closed += 1
+                // Rows shift as one closes; give the list a moment before the next.
+                try? await Task.sleep(for: .milliseconds(80))
+            }
+        }
+        session.close()
+        return closed
+    }
+
+    /// The localized name of Notification Center's Close action ("Close", "Fermer", …), read from Notification
+    /// Center itself, with English as the fallback.
+    private static let closeActionName: String = Bundle(path: "/System/Library/CoreServices/NotificationCenter.app")?
+        .localizedString(forKey: "Close", value: "Close", table: "Localizable") ?? "Close"
+
+    private static func performClose(_ entry: Entry) -> Bool {
+        guard let action = entry.action(named: closeActionName) ?? entry.action(named: "Close") else { return false }
+        return AXUIElementPerformAction(entry.element, action as CFString) == .success
+    }
+
+    // MARK: - Panel session
+
+    /// An open panel to work in. `close()` closes it again unless it was already open before.
+    struct PanelSession {
+        let clock: AXUIElement
+        let wasOpen: Bool
+
+        @MainActor func close() {
+            if !wasOpen, isPanelOpen() { _ = press(clock) }
+        }
+    }
+
+    /// Opens the panel (if it isn't already) and moves it off-screen the moment its window appears: the window
+    /// only exists once the panel opens (macOS 26), and entries can still be pressed off-screen.
+    private static func openPanelOffScreen() async -> PanelSession? {
+        guard let clock = clockItem() else { return nil }
+        let wasOpen = isPanelOpen()
+        if !wasOpen {
+            guard press(clock) else { return nil }
+            lastHide = await movePanelOffScreen()
+            for _ in 0..<20 where !isPanelOpen() { try? await Task.sleep(for: .milliseconds(50)) }
+            // Rows fill in just after the panel reports open.
+            try? await Task.sleep(for: .milliseconds(150))
+        }
+        return PanelSession(clock: clock, wasOpen: wasOpen)
+    }
+
+    /// The entry with this ID, expanding the named apps' collapsed stacks if it's hidden in one.
+    private static func find(_ notificationID: String, expandingStacksOf appNames: Set<String>) async -> Entry? {
+        if let found = entry(matching: notificationID), !found.isStack { return found }
+        let stacks = entries().filter { stack in stack.isStack && appNames.contains { stack.isFrom($0) } }
+        guard !stacks.isEmpty else { return entry(matching: notificationID) }
+        for stack in stacks.prefix(6) { _ = press(stack.element) }
+        try? await Task.sleep(for: .milliseconds(400))
+        return entries().first { normalizedID($0.identifier) == notificationID && !$0.isStack }
+            ?? entry(matching: notificationID)
     }
 
     /// How the last off-screen move went, for diagnostics: whether it moved, and how long the window was up first.

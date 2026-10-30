@@ -110,6 +110,8 @@ final class PanelController: NSObject {
     /// The screen the island is currently on.
     private var currentScreenID: CGDirectDisplayID?
     private let swipeTracker = SwipeTracker()
+    /// Notification Center closes in progress, chained so batches don't overlap.
+    private var notificationCenterWork: Task<Void, Never>?
     /// Watches for Escape, only while an alert or the list is open. See `watchEscape(_:)`.
     private var escapeMonitor: Any?
     /// Mouse x and width when an edge drag started; nil when not resizing.
@@ -127,7 +129,7 @@ final class PanelController: NSObject {
             openList: { [model, settings] in
                 model.openList(marksRead: settings.activePlugins.contains("notifications"))
             },
-            dismiss: { [weak model] ids in ids.forEach { model?.dismiss(id: $0) } }
+            dismiss: { [weak self] ids in self?.dismiss(ids) }
         )
         let hostingView = FirstClickHostingView(rootView: NotchRootView(
             presentation: presentation,
@@ -157,7 +159,7 @@ final class PanelController: NSObject {
             }
         )
         watchRightClicks()
-        swipeTracker.onDismiss = { [weak model] id in model?.dismiss(id: id) }
+        swipeTracker.onDismiss = { [weak self] id in self?.dismiss([id]) }
         // Two-finger swipes arrive as scroll events on the panel under the pointer.
         panel.scrollInterceptor = { [weak self] event in
             guard let self, let view = panel.contentView else { return false }
@@ -276,6 +278,18 @@ final class PanelController: NSObject {
         case .list: model.closeList(marksRead: settings.activePlugins.contains("notifications"))
         case .alert: model.dismissAlert()
         case .counter, .hidden: break
+        }
+    }
+
+    /// Dismisses notifications in Nocci (swipe, Clear All) and closes the same ones in macOS's Notification Center,
+    /// so the two stay in step. Closing there runs in the background, one batch at a time.
+    private func dismiss(_ ids: [NotificationItem.ID]) {
+        let appNames = Set(model.store.allItems.filter { ids.contains($0.id) }.map(\.appName))
+        ids.forEach { model.dismiss(id: $0) }
+        let previous = notificationCenterWork
+        notificationCenterWork = Task {
+            await previous?.value
+            await NotificationCenterUI.close(notificationIDs: ids, appNames: appNames)
         }
     }
 
