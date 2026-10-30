@@ -34,6 +34,16 @@ You need a Mac with Xcode, and an Apple Developer Program membership (for a Deve
    It stops early if the app ID is still the `local.nocci` placeholder or no Developer ID certificate is found.
 3. Create a GitHub Release tagged `v<version>` and attach `build/Nocci-<version>.zip`.
 
+## Sharing a test build (no Developer ID needed)
+
+```bash
+scripts/make-dmg.sh
+```
+
+Makes `build/Nocci-<version>.dmg` with Nocci, an Applications shortcut, and a "Read Me First" that explains the
+one-time Open Anyway step. The copy is signed ad-hoc (no personal certificate embedded) and isn't notarized, so
+it's for testers, not a public release.
+
 ## Notes
 
 - **App ID (`CFBundleIdentifier`).** Don't change it after the first release. macOS ties Full Disk Access and the
