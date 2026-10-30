@@ -148,11 +148,33 @@ public struct DatabaseSource: NotificationSource {
                     return "\(key)=\(scheme):"
                 }
                 var info = ""
-                if app.contains("slack"), let data = req["usda"] as? Data,
+                if app.contains("claude"), let data = req["usda"] as? Data {
+                    // Field names, types, URL schemes, and shapes only (letters A/a, digits 9).
+                    func shape(_ text: String) -> String {
+                        String(text.prefix(80).map { $0.isUppercase ? "A" : $0.isLowercase ? "a" : $0.isNumber ? "9" : $0 })
+                    }
+                    func describe(_ value: Any, depth: Int = 0) -> String {
+                        switch value {
+                        case let dict as [AnyHashable: Any] where depth < 3:
+                            return "{" + dict.map { "\($0.key):\(describe($0.value, depth: depth + 1))" }.sorted().joined(separator: ",") + "}"
+                        case let url as URL:
+                            return "URL(\(url.scheme ?? "?")) \(shape(url.absoluteString))"
+                        case let text as String:
+                            if let scheme = URL(string: text)?.scheme, text.contains("://") { return "url(\(scheme)) \(shape(text))" }
+                            return "str \(shape(text))"
+                        default:
+                            return "\(type(of: value))"
+                        }
+                    }
+                    let classes: [AnyClass] = [NSDictionary.self, NSArray.self, NSString.self, NSNumber.self, NSURL.self, NSDate.self, NSData.self]
+                    let parsed: Any? = (try? NSKeyedUnarchiver.unarchivedObject(ofClasses: classes, from: data))
+                        ?? (try? PropertyListSerialization.propertyList(from: data, format: nil))
+                    info = " usda=\(parsed.map { describe($0) } ?? "unreadable \(data.count) bytes")"
+                } else if app.contains("slack"), let data = req["usda"] as? Data,
                    let user = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] {
                     // Field names and value types only.
                     info = " usda{" + user.map { "\($0.key):\(type(of: $0.value))" }.sorted().joined(separator: ",") + "}"
-                } else if app.contains("slack") {
+                } else if !app.contains("scripteditor") {
                     // Shape only: letters become A/a and digits 9, so no real IDs are shown.
                     func shape(_ value: Any?) -> String {
                         guard let text = value as? String else { return value.map { "\(type(of: $0))" } ?? "none" }
