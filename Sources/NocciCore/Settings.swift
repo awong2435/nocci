@@ -12,6 +12,8 @@ public enum SettingsKey {
     public static let indicatorSide = "indicatorSide"
     public static let screenChoice = "screenChoice"
     public static let hideFromScreenRecordings = "hideFromScreenRecordings"
+    /// Slack workspace address, for opening the message when a Slack notification is clicked.
+    public static let slackWorkspace = "slackWorkspace"
     /// Multiplier for text in alerts and the list.
     public static let fontScale = "fontScale"
     /// Array of plugin IDs, in the order their sections appear in the island.
@@ -117,6 +119,11 @@ public final class NocciSettings {
     public var screenChoice: ScreenChoice {
         didSet { defaults.set(screenChoice.rawValue, forKey: SettingsKey.screenChoice) }
     }
+    /// Slack workspace address (like "team.slack.com"). Slack's notifications don't say which workspace they're
+    /// from, so this is needed to open the message on click. Empty: clicking just opens Slack.
+    public var slackWorkspace: String {
+        didSet { defaults.set(slackWorkspace, forKey: SettingsKey.slackWorkspace) }
+    }
     /// Keeps the island out of screenshots and screen recordings (it still shows on screen).
     public var hideFromScreenRecordings: Bool {
         didSet { defaults.set(hideFromScreenRecordings, forKey: SettingsKey.hideFromScreenRecordings) }
@@ -155,6 +162,7 @@ public final class NocciSettings {
         indicatorSide = defaults.string(forKey: SettingsKey.indicatorSide).flatMap(IndicatorSide.init(rawValue:)) ?? .right
         screenChoice = defaults.string(forKey: SettingsKey.screenChoice).flatMap(ScreenChoice.init(rawValue:)) ?? .notched
         hideFromScreenRecordings = defaults.bool(forKey: SettingsKey.hideFromScreenRecordings)
+        slackWorkspace = defaults.string(forKey: SettingsKey.slackWorkspace) ?? ""
         hoverOpenDelay = defaults.object(forKey: SettingsKey.hoverOpenDelay) as? Double ?? 0.2
         hoverCloseDelay = defaults.object(forKey: SettingsKey.hoverCloseDelay) as? Double ?? 0.4
         let scale = defaults.object(forKey: SettingsKey.fontScale) as? Double ?? 1
@@ -187,6 +195,7 @@ public final class NocciSettings {
         indicatorSide = .right
         screenChoice = .notched
         hideFromScreenRecordings = false
+        slackWorkspace = ""
         hoverOpenDelay = 0.2
         hoverCloseDelay = 0.4
         fontScale = 1

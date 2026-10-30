@@ -180,7 +180,7 @@ public struct DatabaseSource: NotificationSource {
                         guard let text = value as? String else { return value.map { "\(type(of: $0))" } ?? "none" }
                         return String(text.prefix(60).map { $0.isUppercase ? "A" : $0.isLowercase ? "a" : $0.isNumber ? "9" : $0 })
                     }
-                    info = " keys[\(req.keys.sorted().joined(separator: ","))] iden=\(shape(req["iden"])) thre=\(shape(req["thre"]))"
+                    info = " keys[\(req.keys.sorted().joined(separator: ","))] iden=\(shape(req["iden"])) thre=\(shape(req["thre"])) cate=\(shape(req["cate"])) dest=\(shape(req["dest"]))"
                 }
                 lines.append("\(app): \(links.isEmpty ? "no link" : links.sorted().joined(separator: ", "))\(info)")
             }
@@ -209,29 +209,15 @@ public struct DatabaseSource: NotificationSource {
             body: req["body"] as? String ?? "",
             // Core Data timestamp: seconds since 2001-01-01.
             date: Date(timeIntervalSinceReferenceDate: deliveredDate),
-            actionURL: actionURL(bundleID: bundleID, req: req)
+            actionURL: actionURL(req: req),
+            sourceID: req["iden"] as? String
         )
     }
 
-    /// Where a click should go. Prefers the link the app attached (`durl`; Calendar and Messages set one).
-    /// Slack sets none, but its notification ID is "<channel ID>_<message timestamp>", which is enough for a
-    /// `slack://` link to that message.
-    static func actionURL(bundleID: String, req: [String: Any]) -> URL? {
-        if let link = req["durl"] as? String, let url = URL(string: link), url.scheme != nil {
-            return url
-        }
-        if bundleID == "com.tinyspeck.slackmacgap", let id = req["iden"] as? String {
-            let parts = id.split(separator: "_", maxSplits: 1).map(String.init)
-            guard parts.count == 2,
-                  parts[0].allSatisfy({ $0.isUppercase || $0.isNumber }),
-                  parts[1].allSatisfy({ $0.isNumber || $0 == "." }) else { return nil }
-            var link = URLComponents()
-            link.scheme = "slack"
-            link.host = "channel"
-            link.queryItems = [URLQueryItem(name: "id", value: parts[0]), URLQueryItem(name: "message", value: parts[1])]
-            return link.url
-        }
-        return nil
+    /// The link the app attached for clicks (`durl`; Calendar and Messages set one), if any.
+    static func actionURL(req: [String: Any]) -> URL? {
+        guard let link = req["durl"] as? String, let url = URL(string: link), url.scheme != nil else { return nil }
+        return url
     }
 
     static func plistDictionary(_ data: Data) -> [String: Any]? {

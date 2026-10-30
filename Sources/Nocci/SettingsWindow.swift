@@ -119,6 +119,18 @@ private struct SettingsView: View {
             }
 
             Section {
+                TextField("Slack workspace", text: $settings.slackWorkspace, prompt: Text("yourteam.slack.com"))
+            } header: {
+                Text("Links")
+            } footer: {
+                if !settings.slackWorkspace.isEmpty, SlackLink.normalizedWorkspace(settings.slackWorkspace) == nil {
+                    Text("That doesn't look like a Slack address. It should end in .slack.com.")
+                } else {
+                    Text("Lets clicking a Slack notification open that message. Find it in any Slack message's Copy link.")
+                }
+            }
+
+            Section {
                 Picker("Preview", selection: $model.selection) {
                     ForEach(PanelController.Preview.allCases, id: \.self) { preview in
                         Text(previewLabel(preview)).tag(preview)
