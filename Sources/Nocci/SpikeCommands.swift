@@ -52,6 +52,43 @@ enum SpikeCommands {
             run { probeStackExpansion(app: app, actionName: actionName) }
             return true
         }
+        if let index = arguments.firstIndex(of: "--nc-open-test") {
+            // Clicks the newest notification from one app (default: Script Editor, i.e. a test notification) the way
+            // Nocci does, and reports whether the panel was moved off-screen and the press worked. No content.
+            let bundleID = arguments.dropFirst(index + 1).first ?? "com.apple.ScriptEditor2"
+            run {
+                guard let item = try source().recent(limit: 100, now: Date()).first(where: { $0.appBundleID.lowercased() == bundleID.lowercased() }) else {
+                    return "no \(bundleID) notification"
+                }
+                var result: Bool?
+                Task { @MainActor in result = await NotificationCenterUI.open(notificationID: item.id, appName: item.appName) }
+                while result == nil { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
+                let hide = NotificationCenterUI.lastHide
+                return "pressed: \(result!), moved off-screen: \(hide.map { "\($0.moved)" } ?? "panel was already open or a banner was pressed"), window visible for: \(hide.map { "\($0.visibleFor)" } ?? "-"), frontmost: \(NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "?")"
+            }
+            return true
+        }
+        if arguments.contains("--nc-windows") {
+            // Notification Center's windows with the panel as it is: type, frame, whether movable. Changes nothing.
+            run {
+                guard NotificationCenterUI.isTrusted, let center = NotificationCenterUI.appElement(NotificationCenterUI.notificationCenterID) else {
+                    return "no accessibility or Notification Center"
+                }
+                let windows = (NotificationCenterUI.attribute(center, kAXWindowsAttribute) as [AXUIElement]?) ?? []
+                var lines = ["panel open: \(NotificationCenterUI.isPanelOpen()), windows: \(windows.count)"]
+                for window in windows {
+                    let subrole: String = NotificationCenterUI.attribute(window, kAXSubroleAttribute) ?? "?"
+                    var position = CGPoint.zero, size = CGSize.zero
+                    if let value: AXValue = NotificationCenterUI.attribute(window, kAXPositionAttribute) { AXValueGetValue(value, .cgPoint, &position) }
+                    if let value: AXValue = NotificationCenterUI.attribute(window, kAXSizeAttribute) { AXValueGetValue(value, .cgSize, &size) }
+                    var settable: DarwinBoolean = false
+                    AXUIElementIsAttributeSettable(window, kAXPositionAttribute as CFString, &settable)
+                    lines.append("- \(subrole) at \(Int(position.x)),\(Int(position.y)) \(Int(size.width))x\(Int(size.height)) movable=\(settable.boolValue) children=\(NotificationCenterUI.children(window).count)")
+                }
+                return lines.joined(separator: "\n")
+            }
+            return true
+        }
         if arguments.contains("--nc-probe") {
             // Opens the Notification Center panel, lists its entries by type and ID match only, closes it.
             run { try probeNotificationCenter() }

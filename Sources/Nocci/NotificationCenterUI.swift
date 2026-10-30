@@ -60,6 +60,9 @@ enum NotificationCenterUI {
         let wasOpen = isPanelOpen()
         if !wasOpen {
             guard press(clock) else { return false }
+            // Out of sight before it slides in: the panel's window only exists once it opens (macOS 26), so catch
+            // it the moment it appears and move it off-screen. The press still works there.
+            lastHide = await movePanelOffScreen()
             for _ in 0..<20 where !isPanelOpen() { try? await Task.sleep(for: .milliseconds(50)) }
             // Rows fill in just after the panel reports open.
             try? await Task.sleep(for: .milliseconds(150))
@@ -82,6 +85,29 @@ enum NotificationCenterUI {
         try? await Task.sleep(for: .milliseconds(300))
         if !wasOpen, isPanelOpen() { _ = press(clock) }
         return pressed
+    }
+
+    /// How the last off-screen move went, for diagnostics: whether it moved, and how long the window was up first.
+    static var lastHide: (moved: Bool, visibleFor: Duration)?
+
+    /// Waits up to a second for Notification Center's window to appear and moves every one of its windows far
+    /// off-screen. A new window opens in place each time, so nothing needs moving back.
+    private static func movePanelOffScreen() async -> (moved: Bool, visibleFor: Duration) {
+        let clock = ContinuousClock()
+        let start = clock.now
+        guard let center = appElement(notificationCenterID) else { return (false, .zero) }
+        while clock.now - start < .seconds(1) {
+            let windows = (attribute(center, kAXWindowsAttribute) as [AXUIElement]?) ?? []
+            if !windows.isEmpty {
+                let visibleFor = clock.now - start
+                var offScreen = CGPoint(x: 50_000, y: 50_000)
+                guard let position = AXValueCreate(.cgPoint, &offScreen) else { return (false, visibleFor) }
+                let moved = windows.map { AXUIElementSetAttributeValue($0, kAXPositionAttribute as CFString, position) == .success }
+                return (moved.contains(true), visibleFor)
+            }
+            try? await Task.sleep(for: .milliseconds(3))
+        }
+        return (false, clock.now - start)
     }
 
     /// The entry with this notification's ID (Notification Center's IDs are the database's record UUIDs).
