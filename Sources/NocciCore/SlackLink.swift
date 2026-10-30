@@ -6,9 +6,9 @@ import Foundation
 public enum SlackLink {
     public static let bundleID = "com.tinyspeck.slackmacgap"
 
-    /// slack://channel?team=<team>&id=<channel>&message=<timestamp>. `team` and `id` are Slack's documented
-    /// parameters and reliably open the channel; `message` asks for the exact message (not documented by
-    /// Slack, so it may land at the newest messages instead). Nil if the team ID or notification ID is malformed.
+    /// slack://channel?team=<team>&id=<channel>, Slack's documented link: opens the conversation, not the exact
+    /// message (an undocumented `message` parameter left Slack loading forever). Nil if the team ID or
+    /// notification ID is malformed.
     public static func appURL(notificationID: String, teamID: String) -> URL? {
         guard let team = normalizedTeamID(teamID) else { return nil }
         let parts = notificationID.split(separator: "_", maxSplits: 1).map(String.init)
@@ -21,7 +21,6 @@ public enum SlackLink {
         link.queryItems = [
             URLQueryItem(name: "team", value: team),
             URLQueryItem(name: "id", value: parts[0]),
-            URLQueryItem(name: "message", value: parts[1]),
         ]
         return link.url
     }

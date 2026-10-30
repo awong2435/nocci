@@ -3,9 +3,9 @@ import Testing
 @testable import NocciCore
 
 struct SlackLinkTests {
-    @Test func buildsTheAppLinkWithTeamChannelAndMessage() {
+    @Test func buildsTheAppLinkWithTeamAndChannel() {
         let url = SlackLink.appURL(notificationID: "C012AB3CD_1761234567.123456", teamID: "T01ABCDEF")
-        #expect(url?.absoluteString == "slack://channel?team=T01ABCDEF&id=C012AB3CD&message=1761234567.123456")
+        #expect(url?.absoluteString == "slack://channel?team=T01ABCDEF&id=C012AB3CD")
     }
 
     @Test func acceptsTheTeamIDInCommonPastedForms() {
