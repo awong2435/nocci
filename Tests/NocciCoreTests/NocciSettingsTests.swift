@@ -103,3 +103,14 @@ extension NocciSettingsTests {
         #expect(NocciSettings(defaults: defaults).hiddenApps.isEmpty)
     }
 }
+
+extension NocciSettingsTests {
+    @Test func quietModeIsSavedAndReset() {
+        let settings = NocciSettings(defaults: defaults)
+        #expect(!settings.quietMode)
+        settings.quietMode = true
+        #expect(NocciSettings(defaults: defaults).quietMode)
+        settings.reset()
+        #expect(!NocciSettings(defaults: defaults).quietMode)
+    }
+}

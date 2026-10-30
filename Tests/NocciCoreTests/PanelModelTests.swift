@@ -211,3 +211,17 @@ extension PanelModelTests {
         #expect(model.store.items.isEmpty)
     }
 }
+
+extension PanelModelTests {
+    @Test func quietModeNotificationsOnlyUpdateTheCounter() {
+        let model = model()
+        model.quietMode = true
+        model.receive(item("a"))
+        #expect(model.state == .counter)
+        #expect(model.store.unreadCount == 1)
+
+        model.quietMode = false
+        model.receive(item("b"))
+        #expect(model.state == .alert("b"))
+    }
+}

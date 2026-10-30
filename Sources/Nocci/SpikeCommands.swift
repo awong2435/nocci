@@ -209,7 +209,12 @@ enum SpikeCommands {
             sample("6", "com.anthropic.claudefordesktop", "Claude", "Scheduled task completed", nil, "Daily wrapup", minutesAgo: 25),
         ])
         let listState = NotificationListState()
-        try write(island(NotificationList(store: store, state: listState, notchHeight: 0, scrolls: false), width: 560), "list-collapsed.png")
+        let previewSettings = NocciSettings(defaults: UserDefaults(suiteName: "nocci-render-\(UUID().uuidString)")!)
+        try write(island(NotificationList(store: store, state: listState, notchHeight: 0, scrolls: false)
+            .environment(\.nocciSettings, previewSettings), width: 560), "list-collapsed.png")
+        previewSettings.quietMode = true
+        try write(island(NotificationList(store: store, state: listState, notchHeight: 0, scrolls: false)
+            .environment(\.nocciSettings, previewSettings), width: 560), "list-quiet.png")
         listState.expanded = ["com.apple.ScriptEditor2"]
         try write(island(NotificationList(store: store, state: listState, notchHeight: 0, scrolls: false), width: 560), "list-expanded.png")
         return "Rendered to \(directory)"

@@ -12,6 +12,8 @@ public enum SettingsKey {
     public static let indicatorSide = "indicatorSide"
     public static let screenChoice = "screenChoice"
     public static let hideFromScreenRecordings = "hideFromScreenRecordings"
+    /// Quiet mode: new notifications only update the unread indicator, no alert.
+    public static let quietMode = "quietMode"
     /// Multiplier for text in alerts and the list.
     public static let fontScale = "fontScale"
     /// Array of plugin IDs, in the order their sections appear in the island.
@@ -117,6 +119,11 @@ public final class NocciSettings {
     public var screenChoice: ScreenChoice {
         didSet { defaults.set(screenChoice.rawValue, forKey: SettingsKey.screenChoice) }
     }
+    /// Quiet mode (the bell in the island's header): new notifications don't drop down as alerts; they only
+    /// update the unread indicator beside the notch.
+    public var quietMode: Bool {
+        didSet { defaults.set(quietMode, forKey: SettingsKey.quietMode) }
+    }
     /// Keeps the island out of screenshots and screen recordings (it still shows on screen).
     public var hideFromScreenRecordings: Bool {
         didSet { defaults.set(hideFromScreenRecordings, forKey: SettingsKey.hideFromScreenRecordings) }
@@ -155,6 +162,7 @@ public final class NocciSettings {
         indicatorSide = defaults.string(forKey: SettingsKey.indicatorSide).flatMap(IndicatorSide.init(rawValue:)) ?? .right
         screenChoice = defaults.string(forKey: SettingsKey.screenChoice).flatMap(ScreenChoice.init(rawValue:)) ?? .notched
         hideFromScreenRecordings = defaults.bool(forKey: SettingsKey.hideFromScreenRecordings)
+        quietMode = defaults.bool(forKey: SettingsKey.quietMode)
         hoverOpenDelay = defaults.object(forKey: SettingsKey.hoverOpenDelay) as? Double ?? 0.2
         hoverCloseDelay = defaults.object(forKey: SettingsKey.hoverCloseDelay) as? Double ?? 0.4
         let scale = defaults.object(forKey: SettingsKey.fontScale) as? Double ?? 1
@@ -187,6 +195,7 @@ public final class NocciSettings {
         indicatorSide = .right
         screenChoice = .notched
         hideFromScreenRecordings = false
+        quietMode = false
         hoverOpenDelay = 0.2
         hoverCloseDelay = 0.4
         fontScale = 1

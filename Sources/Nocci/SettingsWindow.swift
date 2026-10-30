@@ -108,6 +108,7 @@ private struct SettingsView: View {
                         Button("Open Login Items") { LoginItem.openSettings() }
                     }
                 }
+                Toggle("Quiet mode", isOn: $settings.quietMode)
                 Toggle("Hide from screen recordings", isOn: $settings.hideFromScreenRecordings)
                 LabeledContent("Permissions and setup") {
                     Button("Run Setup Guide Again", action: onShowGuide)

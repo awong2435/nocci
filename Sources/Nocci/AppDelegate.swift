@@ -87,10 +87,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Keeps the model's alert duration and the store's hidden apps in step with Settings.
+    /// Keeps the model's alert duration and quiet mode, and the store's hidden apps, in step with Settings.
     private func applyAlertDurationOnChange() {
         withObservationTracking {
             model.alertDuration = settings.alertDuration
+            model.quietMode = settings.quietMode
             model.store.hiddenApps = settings.hiddenApps
         } onChange: { [weak self] in
             Task { @MainActor in self?.applyAlertDurationOnChange() }

@@ -195,6 +195,7 @@ final class PanelController: NSObject {
             _ = settings.indicatorSide
             _ = settings.screenChoice
             _ = settings.hideFromScreenRecordings
+            _ = settings.quietMode
             _ = settings.fontScale
             _ = settings.pluginOrder
             _ = settings.enabledPlugins
@@ -458,7 +459,9 @@ final class PanelController: NSObject {
             // Screens without a notch show nothing at rest: alerts still drop in, and hovering the top center
             // still opens the island.
             guard geometry.hasNotch else { return morph(to: nil, geometry: geometry) }
-            let showsIndicator = state == .counter && settings.indicatorStyle != .off
+            // In quiet mode the indicator is how new notifications show, so it's never off then.
+            let indicatorStyle = settings.quietMode && settings.indicatorStyle == .off ? .light : settings.indicatorStyle
+            let showsIndicator = state == .counter && indicatorStyle != .off
             let compact = activePlugins.first { $0.showsCompact }
             guard showsIndicator || compact != nil else { return morph(to: nil, geometry: geometry) }
 
@@ -469,7 +472,7 @@ final class PanelController: NSObject {
             }
             let rest = PanelPresentation.Content.rest(
                 layoutSize: size,
-                indicator: showsIndicator ? .init(style: settings.indicatorStyle, side: settings.indicatorSide) : nil,
+                indicator: showsIndicator ? .init(style: indicatorStyle, side: settings.indicatorSide) : nil,
                 compactPluginID: compact?.id
             )
             morph(to: rest, radius: compact == nil ? 8 : 14, geometry: geometry)
@@ -579,6 +582,7 @@ private struct NotchRootView: View {
                 }
             }
             .environment(\.nocciFontScale, CGFloat(settings.fontScale))
+            .environment(\.nocciSettings, settings)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 

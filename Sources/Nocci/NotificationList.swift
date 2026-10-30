@@ -20,6 +20,7 @@ struct NotificationList: View {
     let scrolls: Bool
     @Environment(\.nocciFontScale) private var scale
     @Environment(\.notificationActions) private var actions
+    @Environment(\.nocciSettings) private var settings
 
     var body: some View {
         Group {
@@ -39,6 +40,9 @@ struct NotificationList: View {
                 Text("Notifications")
                     .font(.system(size: 15 * scale, weight: .semibold))
                 Spacer()
+                if let settings {
+                    QuietButton(settings: settings)
+                }
                 if !store.items.isEmpty {
                     ClearButton { actions.dismiss(store.items.map(\.id)) }
                 }
@@ -172,6 +176,29 @@ private struct NotificationCard: View {
         .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .onTapGesture(perform: onTap)
         .swipeToDismiss(item.id, axis: .horizontal, tracker: swipeTracker)
+    }
+}
+
+/// Quiet mode toggle: a bell that fills and gets a slash when new notifications should only update the
+/// indicator instead of dropping down.
+private struct QuietButton: View {
+    @Bindable var settings: NocciSettings
+    @Environment(\.nocciFontScale) private var scale
+
+    var body: some View {
+        Button {
+            settings.quietMode.toggle()
+        } label: {
+            Image(systemName: settings.quietMode ? "bell.slash.fill" : "bell")
+                .font(.system(size: 10 * scale, weight: .semibold))
+                .contentTransition(.symbolEffect(.replace))
+                .frame(width: 22 * scale, height: 22 * scale)
+                .foregroundStyle(settings.quietMode ? Color.black : .white.opacity(0.85))
+                .background(settings.quietMode ? Color.white.opacity(0.9) : .white.opacity(0.14), in: Circle())
+        }
+        .buttonStyle(.plain)
+        .help(settings.quietMode ? "Quiet mode is on: new notifications only update the light" : "Quiet mode")
+        .animation(.spring(duration: 0.25), value: settings.quietMode)
     }
 }
 

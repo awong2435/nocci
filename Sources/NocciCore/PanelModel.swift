@@ -8,6 +8,8 @@ public final class PanelModel {
     public let store: NotificationStore
     public private(set) var state: PanelState = .hidden
     public var alertDuration: AlertDuration
+    /// Quiet mode: new notifications don't alert; they only update the counter.
+    public var quietMode = false
     /// Older notifications that arrived while the current alert was up, newest first (at most two). They show as
     /// a stack behind the alert, like Notification Center, instead of being replaced.
     public private(set) var stackedAlerts: [NotificationItem.ID] = []
@@ -35,6 +37,11 @@ public final class PanelModel {
         store.ingest([item])
         // Hidden apps and dismissed notifications don't alert. While the list is open, new ones just appear in it.
         guard isNew, store.isVisible(item), state != .list else { return }
+        // Quiet mode: no alert, just the counter (unless an alert from before it was turned on is still up).
+        if quietMode {
+            if state == .hidden || state == .counter { state = restingState }
+            return
+        }
         if case .alert(let current) = state {
             stackedAlerts = Array(([current] + stackedAlerts).prefix(2))
         } else {

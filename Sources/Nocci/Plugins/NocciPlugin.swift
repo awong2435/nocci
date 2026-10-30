@@ -1,3 +1,4 @@
+import NocciCore
 import SwiftUI
 
 /// A section Nocci can show when the island opens. Plugins are compiled in (Swift files under
@@ -37,4 +38,6 @@ extension EnvironmentValues {
     /// Text size multiplier from Settings. Multiply base point sizes by it so alerts, the list, and plugin
     /// sections all scale together.
     @Entry var nocciFontScale: CGFloat = 1
+    /// Nocci's settings, for views that offer a quick toggle (quiet mode). Nil when rendered offscreen.
+    @Entry var nocciSettings: NocciSettings? = nil
 }
