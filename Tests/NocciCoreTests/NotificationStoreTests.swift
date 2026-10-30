@@ -121,3 +121,15 @@ extension NotificationStoreTests {
         #expect(apps.map(\.name) == ["mail", "Slack", "zoom.us"])
     }
 }
+
+extension NotificationStoreTests {
+    @Test func notificationsClearedInMacOSLeaveTheList() {
+        let store = NotificationStore()
+        store.ingest([item("a", at: 0), item("b", at: 10), item("c", at: 20)])
+        store.dismiss(id: "a")
+        store.removeMissing(keeping: ["b"])
+        #expect(store.allItems.map(\.id) == ["b"])
+        #expect(store.dismissedIDs.isEmpty)
+        #expect(store.unreadCount == 1)
+    }
+}

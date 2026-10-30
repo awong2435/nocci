@@ -31,6 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private let statusLine = NSMenuItem(title: "Starting…", action: nil, keyEquivalent: "")
     private var listenTask: Task<Void, Never>?
+    private var syncTask: Task<Void, Never>?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Menu bar only, no Dock icon (LSUIElement covers the bundled app; this covers `swift run`).
@@ -139,6 +140,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 log.error("Couldn't read notifications: \(String(describing: error), privacy: .public)")
                 statusLine.title = "No access: grant Full Disk Access, then relaunch"
                 return
+            }
+            // Notification Center → Nocci: drop what's been cleared there, so the list matches it.
+            syncTask = Task { [model] in
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(2))
+                    let received = model.receivedCount
+                    // Skip the round if something arrived while reading: it wouldn't be in `existing`.
+                    if let existing = try? await source.existingIDs(), model.receivedCount == received {
+                        model.removeMissing(keeping: existing)
+                    }
+                }
             }
             for await item in source.newItems() {
                 model.receive(item)

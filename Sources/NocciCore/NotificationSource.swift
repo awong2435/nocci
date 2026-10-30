@@ -7,4 +7,8 @@ public protocol NotificationSource: Sendable {
 
     /// Notifications that arrive after the source starts.
     func newItems() -> AsyncStream<NotificationItem>
+
+    /// IDs of every notification that still exists, to notice ones cleared elsewhere (Notification Center).
+    /// Nil when the source can't tell.
+    func existingIDs() async throws -> Set<NotificationItem.ID>?
 }

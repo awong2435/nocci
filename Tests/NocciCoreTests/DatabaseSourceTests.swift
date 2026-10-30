@@ -131,3 +131,12 @@ extension DatabaseSourceTests {
         #expect(DatabaseSource.actionURL(req: [:]) == nil)
     }
 }
+
+extension DatabaseSourceTests {
+    @Test func existingIDsMatchTheIDsItemsAreGiven() async throws {
+        let source = DatabaseSource(url: url)
+        let ids = try await source.existingIDs()
+        let itemIDs = try source.recent(limit: 10, now: Date().addingTimeInterval(200_000)).map(\.id)
+        #expect(ids == Set(itemIDs))
+    }
+}

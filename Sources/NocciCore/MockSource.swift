@@ -13,6 +13,9 @@ public struct MockSource: NotificationSource {
         Array(Self.samples(now: Date()).prefix(limit))
     }
 
+    /// Fake notifications are never cleared elsewhere.
+    public func existingIDs() async throws -> Set<NotificationItem.ID>? { nil }
+
     public func newItems() -> AsyncStream<NotificationItem> {
         guard let interval else { return AsyncStream { $0.finish() } }
         return AsyncStream { continuation in

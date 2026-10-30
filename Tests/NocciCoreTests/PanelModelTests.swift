@@ -198,3 +198,16 @@ extension PanelModelTests {
         #expect(model.stackedAlerts.isEmpty)
     }
 }
+
+extension PanelModelTests {
+    @Test func anAlertClearedInMacOSGivesWayToTheNextInItsStack() {
+        let model = model()
+        model.receive(item("a"))
+        model.receive(item("b"))
+        model.removeMissing(keeping: ["a"])
+        #expect(model.state == .alert("a"))
+        model.removeMissing(keeping: [])
+        #expect(model.state == .hidden)
+        #expect(model.store.items.isEmpty)
+    }
+}

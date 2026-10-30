@@ -13,6 +13,8 @@ public final class PanelModel {
     public private(set) var stackedAlerts: [NotificationItem.ID] = []
 
     @ObservationIgnored private var expiry: Task<Void, Never>?
+    /// Counts notifications received, so a sync can tell one arrived while it was reading (and skip that round).
+    @ObservationIgnored public private(set) var receivedCount = 0
 
     public init(store: NotificationStore, alertDuration: AlertDuration = .tenSeconds) {
         self.store = store
@@ -29,6 +31,7 @@ public final class PanelModel {
     /// If an alert is already up, the new one goes on top and the old one stacks behind it; the timer restarts.
     public func receive(_ item: NotificationItem) {
         let isNew = !store.allItems.contains { $0.id == item.id }
+        receivedCount += 1
         store.ingest([item])
         // Hidden apps and dismissed notifications don't alert. While the list is open, new ones just appear in it.
         guard isNew, store.isVisible(item), state != .list else { return }
@@ -89,6 +92,24 @@ public final class PanelModel {
                 state = .alert(next)
                 scheduleExpiry(for: next)
             }
+        }
+    }
+
+    /// Drops notifications cleared in macOS's Notification Center. If the alert showing was one of them, the next
+    /// one in its stack comes up, or the alert collapses.
+    public func removeMissing(keeping existing: Set<NotificationItem.ID>) {
+        store.removeMissing(keeping: existing)
+        stackedAlerts.removeAll { !existing.contains($0) }
+        guard case .alert(let id) = state, !existing.contains(id) else {
+            if state == .counter, store.unreadCount == 0 { state = .hidden }
+            return
+        }
+        if stackedAlerts.isEmpty {
+            expireAlert(id: id)
+        } else {
+            let next = stackedAlerts.removeFirst()
+            state = .alert(next)
+            scheduleExpiry(for: next)
         }
     }
 

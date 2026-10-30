@@ -51,6 +51,20 @@ public struct DatabaseSource: NotificationSource {
         }
     }
 
+    /// Every record's ID. A notification cleared in Notification Center is deleted from the database, so a
+    /// missing ID means it was cleared.
+    public func existingIDs() async throws -> Set<NotificationItem.ID>? {
+        try withDatabase { db in
+            let statement = try prepare(db, "SELECT rec_id, uuid FROM record")
+            defer { sqlite3_finalize(statement) }
+            var ids = Set<NotificationItem.ID>()
+            while sqlite3_step(statement) == SQLITE_ROW {
+                ids.insert(columnData(statement, 1).map(Self.hex) ?? "rec-\(sqlite3_column_int64(statement, 0))")
+            }
+            return ids
+        }
+    }
+
     /// Polls for notifications that arrive, or whose scheduled time passes, after the stream starts.
     ///
     /// Record numbers can't be used to spot new ones: macOS reuses them after notifications are cleared, and

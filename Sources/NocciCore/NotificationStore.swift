@@ -77,6 +77,14 @@ public final class NotificationStore {
     public func dismiss(id: NotificationItem.ID) {
         dismissedIDs.insert(id)
     }
+
+    /// Drops notifications that no longer exist in macOS (cleared in Notification Center), so the list matches
+    /// it. `existing` is every ID macOS still has.
+    public func removeMissing(keeping existing: Set<NotificationItem.ID>) {
+        guard allItems.contains(where: { !existing.contains($0.id) }) else { return }
+        allItems.removeAll { !existing.contains($0.id) }
+        dismissedIDs.formIntersection(existing)
+    }
 }
 
 /// One app's notifications in the list.
