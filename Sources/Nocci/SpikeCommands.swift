@@ -212,6 +212,11 @@ enum SpikeCommands {
         let previewSettings = NocciSettings(defaults: UserDefaults(suiteName: "nocci-render-\(UUID().uuidString)")!)
         try write(island(NotificationList(store: store, state: listState, notchHeight: 0, scrolls: false)
             .environment(\.nocciSettings, previewSettings), width: 560), "list-collapsed.png")
+        let hoverTracker = SwipeTracker()
+        hoverTracker.previewHover("6")
+        try write(island(NotificationList(store: store, state: listState, notchHeight: 0, scrolls: false)
+            .environment(\.nocciSettings, previewSettings)
+            .environment(\.swipeTracker, hoverTracker), width: 560), "list-hover.png")
         previewSettings.quietMode = true
         try write(island(NotificationList(store: store, state: listState, notchHeight: 0, scrolls: false)
             .environment(\.nocciSettings, previewSettings), width: 560), "list-quiet.png")

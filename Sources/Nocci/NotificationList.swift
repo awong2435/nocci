@@ -176,6 +176,7 @@ private struct NotificationCard: View {
         .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .onTapGesture(perform: onTap)
         .swipeToDismiss(item.id, axis: .horizontal, tracker: swipeTracker)
+        .clearButtonOnHover(item.id)
     }
 }
 

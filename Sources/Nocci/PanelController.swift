@@ -353,6 +353,12 @@ final class PanelController: NSObject {
 
     /// Hovering the notch opens the list. Once open, it stays while the mouse is over the notch or the island.
     private func hoverAction(at point: NSPoint) -> HoverTracker.Action? {
+        // Which notification the pointer is over, for its × button (panel content coordinates, top-left origin).
+        if panel.isVisible, panel.frame.contains(point), let view = panel.contentView {
+            swipeTracker.updateHover(at: view.convert(panel.convertPoint(fromScreen: point), from: nil))
+        } else {
+            swipeTracker.updateHover(at: nil)
+        }
         guard preview == nil, resizeStart == nil, let screen = targetScreen() else { return nil }
 
         // Following the mouse: move the light (or nothing) to the screen the mouse is now on.
@@ -658,6 +664,8 @@ private struct NotchRootView: View {
                 .contentShape(Rectangle())
                 .onTapGesture { if stacked > 0 { actions.openList() } else { actions.open(item) } }
                 .swipeToDismiss(item.id, axis: .vertical, tracker: swipeTracker)
+                // Just inside the card's visible top-left, below the notch (outside the island it would be clipped).
+                .clearButtonOnHover(item.id, offset: CGSize(width: 8, height: presentation.notchHeight + 6))
         case .rest(_, _, let compactID):
             if let compactID, let plugin = plugins[compactID] {
                 // Compact views in the wings beside the notch.

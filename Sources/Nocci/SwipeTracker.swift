@@ -15,6 +15,9 @@ private let log = Logger(subsystem: "local.nocci", category: "swipe")
 final class SwipeTracker {
     /// How far each item is currently pulled: vertical for the alert, horizontal for list rows.
     private(set) var offsets: [NotificationItem.ID: CGFloat] = [:]
+    /// The notification under the pointer, for showing its × button. Found from the panel's own mouse tracking
+    /// and these frames, since system hover isn't dependable in a panel that never becomes key.
+    private(set) var hoveredID: NotificationItem.ID?
 
     /// Called once an item has been swiped far enough to dismiss.
     @ObservationIgnored var onDismiss: (NotificationItem.ID) -> Void = { _ in }
@@ -31,6 +34,20 @@ final class SwipeTracker {
     func register(_ id: NotificationItem.ID, frame: CGRect, axis: Axis) {
         targets[id] = (frame, axis)
     }
+
+    /// Updates `hoveredID` for a pointer position in the panel's content view (top-left origin), or nil when the
+    /// pointer isn't over the panel.
+    func updateHover(at point: CGPoint?) {
+        let id = point.flatMap { point in targets.first { $0.value.frame.contains(point) }?.key }
+        if id != hoveredID { hoveredID = id }
+    }
+
+    #if DEBUG
+    /// For rendered previews (`--render-media`), which have no pointer.
+    func previewHover(_ id: NotificationItem.ID?) {
+        hoveredID = id
+    }
+    #endif
 
     func unregister(_ id: NotificationItem.ID) {
         targets[id] = nil
@@ -156,6 +173,44 @@ private struct SwipeToDismiss: ViewModifier {
 }
 
 /// What the list and alert can do with a notification. Supplied by the panel through the environment.
+extension View {
+    /// A small × at the top-left corner while the pointer is over this notification, like Notification Center's;
+    /// clicking it clears the notification (in macOS's Notification Center too).
+    /// `offset` places it relative to the top-left corner; the default sits just outside it, as in Notification
+    /// Center.
+    func clearButtonOnHover(_ id: NotificationItem.ID, offset: CGSize = CGSize(width: -6, height: -6)) -> some View {
+        modifier(ClearOnHover(id: id, offset: offset))
+    }
+}
+
+private struct ClearOnHover: ViewModifier {
+    let id: NotificationItem.ID
+    let offset: CGSize
+    @Environment(\.swipeTracker) private var tracker
+    @Environment(\.notificationActions) private var actions
+    @Environment(\.nocciFontScale) private var scale
+
+    func body(content: Content) -> some View {
+        content.overlay(alignment: .topLeading) {
+            if tracker?.hoveredID == id {
+                Button { actions.dismiss([id]) } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 8 * scale, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 18 * scale, height: 18 * scale)
+                        .background(Color(white: 0.3), in: Circle())
+                        .overlay(Circle().stroke(Color.black.opacity(0.5), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .help("Clear")
+                .offset(offset)
+                .transition(.opacity.combined(with: .scale(scale: 0.6)))
+            }
+        }
+        .animation(.easeOut(duration: 0.12), value: tracker?.hoveredID == id)
+    }
+}
+
 struct NotificationActions {
     var open: (NotificationItem) -> Void = { _ in }
     /// Opens the full list (clicking a stack of alerts).
