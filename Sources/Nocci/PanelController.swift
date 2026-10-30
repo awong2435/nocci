@@ -279,7 +279,8 @@ final class PanelController: NSObject {
         }
     }
 
-    /// Opens the app a notification came from, then collapses the alert or closes the island.
+    /// Opens a notification where it belongs (see below), clears it from Nocci, and collapses the alert or closes
+    /// the island.
     private func open(_ item: NotificationItem) {
         Task {
             // Best: press the same notification in macOS's Notification Center, which does exactly what a real
@@ -296,6 +297,10 @@ final class PanelController: NSObject {
             }
             log.notice("click: app=\(item.appBundleID, privacy: .public) via=\(item.actionURL != nil ? "app-link" : "app", privacy: .public)")
         }
+        // A clicked notification is handled, like clicking one in Notification Center: it leaves the list and
+        // stops counting as unread. Then get out of the way: the alert collapses (rather than showing the next one
+        // stacked behind it, which stays in the list) and the list closes.
+        model.dismiss(id: item.id)
         switch model.state {
         case .alert: model.dismissAlert()
         case .list: model.closeList(marksRead: settings.activePlugins.contains("notifications"))
