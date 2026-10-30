@@ -18,6 +18,8 @@ final class SwipeTracker {
 
     /// Called once an item has been swiped far enough to dismiss.
     @ObservationIgnored var onDismiss: (NotificationItem.ID) -> Void = { _ in }
+    /// Called when an alert is swiped up: put it away, but keep the notification (unread, in the list).
+    @ObservationIgnored var onHide: (NotificationItem.ID) -> Void = { _ in }
     /// Frames of swipeable items in the panel's content view (top-left origin), and their swipe direction.
     @ObservationIgnored private var targets: [NotificationItem.ID: (frame: CGRect, axis: Axis)] = [:]
     /// The item a trackpad swipe started on, for the rest of that gesture.
@@ -108,7 +110,8 @@ final class SwipeTracker {
                 offsets[id] = axis == .horizontal ? (offset < 0 ? -700 : 700) : -300
             } completion: { [weak self] in
                 self?.offsets[id] = nil
-                self?.onDismiss(id)
+                // Sideways (a list row) clears it; up (an alert) only hides it.
+                if axis == .horizontal { self?.onDismiss(id) } else { self?.onHide(id) }
             }
         } else {
             withAnimation(.spring(duration: 0.3, bounce: 0.25)) {

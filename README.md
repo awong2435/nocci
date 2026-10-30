@@ -8,7 +8,7 @@ then tuck away behind a small green light. Hover over the notch to see them all,
 ## Features
 
 - **Alerts from the notch.** New notifications grow out of the notch, then collapse. Click one to open its app,
-  swipe it up to dismiss it.
+  swipe it up to hide it (it stays in the list).
 - **Notification Center in the notch.** Hover over the notch to see everything, grouped by app in stacks.
   Expand a stack, swipe a notification away, or Clear All.
 - **Unread light.** A small green light (or a count) beside the notch while something's unread.
@@ -61,7 +61,7 @@ Notifications (keep **Notification Center** on).
 
 - **Hover over the notch** to open the list. Move away to close it, or press Escape.
 - **Right-click the notch** (or menu bar › Settings…) for settings.
-- **Click** a notification to open its app; **swipe** it away to dismiss it.
+- **Click** a notification to open it in its app. **Swipe an alert up** to hide it for now; **swipe a list row sideways** to clear it (from macOS's Notification Center too).
 
 ## Known limits
 

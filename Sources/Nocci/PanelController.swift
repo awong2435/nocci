@@ -160,6 +160,8 @@ final class PanelController: NSObject {
         )
         watchRightClicks()
         swipeTracker.onDismiss = { [weak self] id in self?.dismiss([id]) }
+        // Swiping an alert up just puts it away, like an iPhone banner: it stays unread in the list.
+        swipeTracker.onHide = { [weak model] _ in model?.dismissAlert() }
         // Two-finger swipes arrive as scroll events on the panel under the pointer.
         panel.scrollInterceptor = { [weak self] event in
             guard let self, let view = panel.contentView else { return false }
@@ -652,7 +654,7 @@ private struct NotchRootView: View {
         case .alert(let item, let scrolls, _, let stacked):
             AlertCard(item: item, notchHeight: presentation.notchHeight, scrolls: scrolls)
                 // The whole card, not just its text: click opens the app (or the list, for a stack), swipe up
-                // dismisses.
+                // hides it (it stays in the list).
                 .contentShape(Rectangle())
                 .onTapGesture { if stacked > 0 { actions.openList() } else { actions.open(item) } }
                 .swipeToDismiss(item.id, axis: .vertical, tracker: swipeTracker)
