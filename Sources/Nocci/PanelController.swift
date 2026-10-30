@@ -281,14 +281,14 @@ final class PanelController: NSObject {
 
     /// Opens the app a notification came from, then collapses the alert or closes the island.
     private func open(_ item: NotificationItem) {
+        // Which path a click takes, never the link or content.
+        let slackLink = item.appBundleID == SlackLink.bundleID
+            ? item.sourceID.flatMap { SlackLink.appURL(notificationID: $0, teamID: settings.slackTeamID) }
+            : nil
+        log.notice("click: app=\(item.appBundleID, privacy: .public) appLink=\(item.actionURL != nil, privacy: .public) slackID=\(item.sourceID != nil, privacy: .public) teamSet=\(SlackLink.normalizedTeamID(self.settings.slackTeamID) != nil, privacy: .public) slackLink=\(slackLink != nil, privacy: .public)")
         // Straight to the event, conversation, or message when we know where; otherwise the app.
-        if let link = item.actionURL {
+        if let link = item.actionURL ?? slackLink {
             NSWorkspace.shared.open(link)
-        } else if item.appBundleID == SlackLink.bundleID, let id = item.sourceID,
-                  let message = SlackLink.messageURL(notificationID: id, workspace: settings.slackWorkspace),
-                  let slack = NSWorkspace.shared.urlForApplication(withBundleIdentifier: SlackLink.bundleID) {
-            // Handed to the Slack app, not the browser, the same as opening a Copy link link in Slack.
-            NSWorkspace.shared.open([message], withApplicationAt: slack, configuration: NSWorkspace.OpenConfiguration())
         } else if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: item.appBundleID) {
             NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
         }

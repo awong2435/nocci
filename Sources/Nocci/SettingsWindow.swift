@@ -119,14 +119,14 @@ private struct SettingsView: View {
             }
 
             Section {
-                TextField("Slack workspace", text: $settings.slackWorkspace, prompt: Text("yourteam.slack.com"))
+                TextField("Slack team ID", text: $settings.slackTeamID, prompt: Text("T01ABCDEF"))
             } header: {
                 Text("Links")
             } footer: {
-                if !settings.slackWorkspace.isEmpty, SlackLink.normalizedWorkspace(settings.slackWorkspace) == nil {
-                    Text("That doesn't look like a Slack address. It should end in .slack.com.")
+                if !settings.slackTeamID.isEmpty, SlackLink.normalizedTeamID(settings.slackTeamID) == nil {
+                    Text("That doesn't look like a Slack team ID. It starts with T, like T01ABCDEF.")
                 } else {
-                    Text("Lets clicking a Slack notification open that message. Find it in any Slack message's Copy link.")
+                    Text("Lets clicking a Slack notification open that conversation. Open app.slack.com in a browser; the ID is the T… part of the address.")
                 }
             }
 
