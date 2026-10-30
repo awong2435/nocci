@@ -48,10 +48,10 @@ enum NotificationCenterUI {
     // MARK: - Opening a notification
 
     /// Does what clicking the notification in Notification Center does. If it's an on-screen banner, presses it
-    /// directly; otherwise opens the panel, presses the matching entry, and makes sure the panel closes. Returns
-    /// false (having changed nothing visible for long) when it can't: no Accessibility, the entry was cleared, or
-    /// it's hidden inside a collapsed stack.
-    static func open(notificationID: String) async -> Bool {
+    /// directly; otherwise opens the panel, finds the matching entry (expanding `appName`'s collapsed stack if it's
+    /// hidden in one; pressing a stack expands it rather than opening anything), presses it, and makes sure the
+    /// panel closes. Returns false when it can't: no Accessibility, or the notification was cleared.
+    static func open(notificationID: String, appName: String) async -> Bool {
         guard isTrusted else { return false }
         if let banner = entry(matching: notificationID) {
             return press(banner.element)
@@ -64,7 +64,16 @@ enum NotificationCenterUI {
             // Rows fill in just after the panel reports open.
             try? await Task.sleep(for: .milliseconds(150))
         }
-        guard let target = entry(matching: notificationID) else {
+        var target = entry(matching: notificationID)
+        if target == nil {
+            // Hidden in a collapsed stack: expand that app's stacks, then look again.
+            for stack in entries().filter({ $0.isStack && $0.isFrom(appName) }).prefix(3) {
+                _ = press(stack.element)
+            }
+            try? await Task.sleep(for: .milliseconds(400))
+            target = entry(matching: notificationID)
+        }
+        guard let target else {
             if !wasOpen, isPanelOpen() { _ = press(clock) }
             return false
         }
@@ -92,6 +101,18 @@ enum NotificationCenterUI {
         let body: String?
         let isStack: Bool
         let actions: [String]
+        /// "App, title, …" as Notification Center describes the entry; used only to tell which app a stack is.
+        let summary: String?
+
+        /// Whether this entry or stack is from `appName` (its summary starts with the app name).
+        func isFrom(_ appName: String) -> Bool {
+            summary?.lowercased().hasPrefix(appName.lowercased()) ?? false
+        }
+
+        /// The full action name whose "Name:" line is `name` (custom actions look like "Name:Show Details\n…").
+        func action(named name: String) -> String? {
+            actions.first { $0 == name || $0.hasPrefix("Name:\(name)\n") || $0 == "Name:\(name)" }
+        }
     }
 
     static func entries() -> [Entry] {
@@ -116,7 +137,8 @@ enum NotificationCenterUI {
                 identifier: attribute(element, kAXIdentifierAttribute),
                 title: texts["title"], subtitle: texts["subtitle"], body: texts["body"],
                 isStack: isStack,
-                actions: (names as? [String]) ?? []
+                actions: (names as? [String]) ?? [],
+                summary: attribute(element, kAXDescriptionAttribute)
             ))
             return isStack  // look inside stacks for individual rows; entries have no nested entries
         }

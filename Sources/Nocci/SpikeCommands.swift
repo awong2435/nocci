@@ -45,6 +45,13 @@ enum SpikeCommands {
             print(result)
             return true
         }
+        if let index = arguments.firstIndex(of: "--nc-expand-probe") {
+            // Tries an action on one app's stack and reports how many of that app's entries show. Counts only.
+            let app = arguments.dropFirst(index + 1).first ?? "Slack"
+            let actionName = arguments.dropFirst(index + 2).first ?? "Show Details"
+            run { probeStackExpansion(app: app, actionName: actionName) }
+            return true
+        }
         if arguments.contains("--nc-probe") {
             // Opens the Notification Center panel, lists its entries by type and ID match only, closes it.
             run { try probeNotificationCenter() }
@@ -145,6 +152,37 @@ enum SpikeCommands {
         return "Rendered to \(directory)"
     }
     #endif
+
+    private static func probeStackExpansion(app: String, actionName: String) -> String {
+        guard NotificationCenterUI.isTrusted, let clock = NotificationCenterUI.clockItem() else { return "no accessibility or clock" }
+        var lines: [String] = []
+        let wasOpen = NotificationCenterUI.isPanelOpen()
+        if !wasOpen { _ = NotificationCenterUI.press(clock) }
+        for _ in 0..<20 where !NotificationCenterUI.isPanelOpen() { Thread.sleep(forTimeInterval: 0.1) }
+        Thread.sleep(forTimeInterval: 0.3)
+        func count() -> String {
+            let mine = NotificationCenterUI.entries().filter { $0.isFrom(app) }
+            return "\(mine.filter { !$0.isStack }.count) entries, \(mine.filter(\.isStack).count) stacks"
+        }
+        lines.append("\(app) before: \(count())")
+        if let stack = NotificationCenterUI.entries().first(where: { $0.isStack && $0.isFrom(app) }) {
+            let names = stack.actions.map { $0.components(separatedBy: "\n").first ?? $0 }.joined(separator: "|")
+            lines.append("stack actions: \(names)")
+            if let action = stack.action(named: actionName) {
+                let result = AXUIElementPerformAction(stack.element, action as CFString)
+                lines.append("performed \(actionName): \(result.rawValue)")
+                Thread.sleep(forTimeInterval: 0.5)
+                lines.append("\(app) after: \(count())")
+            } else {
+                lines.append("no action named \(actionName)")
+            }
+        } else {
+            lines.append("no \(app) stack")
+        }
+        lines.append("frontmost app: \(NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "?")")
+        if !wasOpen, NotificationCenterUI.isPanelOpen() { _ = NotificationCenterUI.press(clock) }
+        return lines.joined(separator: "\n")
+    }
 
     /// Structure and ID matching only; never titles or bodies.
     private static func probeNotificationCenter() throws -> String {

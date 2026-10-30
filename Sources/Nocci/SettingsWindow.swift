@@ -119,18 +119,6 @@ private struct SettingsView: View {
             }
 
             Section {
-                TextField("Slack team ID", text: $settings.slackTeamID, prompt: Text("T01ABCDEF"))
-            } header: {
-                Text("Links")
-            } footer: {
-                if !settings.slackTeamID.isEmpty, SlackLink.normalizedTeamID(settings.slackTeamID) == nil {
-                    Text("That doesn't look like a Slack team ID. It starts with T, like T01ABCDEF.")
-                } else {
-                    Text("Lets clicking a Slack notification open that conversation. Open app.slack.com in a browser; the ID is the T… part of the address.")
-                }
-            }
-
-            Section {
                 Picker("Preview", selection: $model.selection) {
                     ForEach(PanelController.Preview.allCases, id: \.self) { preview in
                         Text(previewLabel(preview)).tag(preview)
