@@ -203,11 +203,13 @@ private struct QuietButton: View {
     }
 }
 
-/// A round × that turns into a "Clear All" pill on hover (or on the first click, since hover isn't always
-/// delivered to a panel that never becomes key); clicking "Clear All" runs `action`.
+/// A round × that turns into a "Clear All" pill after resting on it for half a second (or on the first click,
+/// since hover isn't always delivered to a panel that never becomes key); clicking "Clear All" runs `action`.
+/// The delay keeps the pill from springing open, and shoving the buttons beside it, as the pointer passes over.
 private struct ClearButton: View {
     let action: () -> Void
     @State private var armed = false
+    @State private var hoverDelay: Task<Void, Never>?
     @Environment(\.nocciFontScale) private var scale
 
     var body: some View {
@@ -230,7 +232,17 @@ private struct ClearButton: View {
             .background(.white.opacity(0.14), in: Capsule())
         }
         .buttonStyle(.plain)
-        .onHover { armed = $0 }
+        .onHover { inside in
+            hoverDelay?.cancel()
+            if inside {
+                hoverDelay = Task {
+                    try? await Task.sleep(for: .milliseconds(500))
+                    if !Task.isCancelled { armed = true }
+                }
+            } else {
+                armed = false
+            }
+        }
         .animation(.spring(duration: 0.25), value: armed)
     }
 }
