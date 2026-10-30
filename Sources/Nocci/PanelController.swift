@@ -664,8 +664,6 @@ private struct NotchRootView: View {
                 .contentShape(Rectangle())
                 .onTapGesture { if stacked > 0 { actions.openList() } else { actions.open(item) } }
                 .swipeToDismiss(item.id, axis: .vertical, tracker: swipeTracker)
-                // Just inside the card's visible top-left, below the notch (outside the island it would be clipped).
-                .clearButtonOnHover(item.id, offset: CGSize(width: 8, height: presentation.notchHeight + 6))
         case .rest(_, _, let compactID):
             if let compactID, let plugin = plugins[compactID] {
                 // Compact views in the wings beside the notch.

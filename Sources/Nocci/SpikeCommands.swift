@@ -217,6 +217,11 @@ enum SpikeCommands {
         try write(island(NotificationList(store: store, state: listState, notchHeight: 0, scrolls: false)
             .environment(\.nocciSettings, previewSettings)
             .environment(\.swipeTracker, hoverTracker), width: 560), "list-hover.png")
+        let sampleAlert = sample("7", "com.anthropic.claudefordesktop", "Claude", "Notch notifications plan", nil,
+                                 "The hover × now sits where the time was.", minutesAgo: 0)
+        hoverTracker.previewHover("7")
+        try write(island(AlertCard(item: sampleAlert, notchHeight: 0, scrolls: false)
+            .environment(\.swipeTracker, hoverTracker), width: 560), "alert-hover.png")
         previewSettings.quietMode = true
         try write(island(NotificationList(store: store, state: listState, notchHeight: 0, scrolls: false)
             .environment(\.nocciSettings, previewSettings), width: 560), "list-quiet.png")

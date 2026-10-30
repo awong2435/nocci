@@ -10,6 +10,8 @@ struct AlertCard: View {
     /// Wraps the text in a scroll view when it's taller than the panel allows.
     let scrolls: Bool
     @Environment(\.nocciFontScale) private var scale
+    @Environment(\.swipeTracker) private var swipeTracker
+    @Environment(\.notificationActions) private var actions
 
     var body: some View {
         Group {
@@ -31,7 +33,25 @@ struct AlertCard: View {
                 }
                 Text(item.appName)
                 Spacer()
-                Text(item.date.formatted(date: .omitted, time: .shortened))
+                // On hover the time gives way to a × that clears this notification, in line with the header so
+                // it doesn't sit on the icon.
+                ZStack(alignment: .trailing) {
+                    Text(item.date.formatted(date: .omitted, time: .shortened))
+                        .opacity(isHovered ? 0 : 1)
+                    if isHovered {
+                        Button { actions.dismiss([item.id]) } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 8 * scale, weight: .bold))
+                                .foregroundStyle(.white)
+                                .frame(width: 18 * scale, height: 18 * scale)
+                                .background(Color(white: 0.3), in: Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .help("Clear")
+                        .transition(.opacity.combined(with: .scale(scale: 0.6)))
+                    }
+                }
+                .animation(.easeOut(duration: 0.12), value: isHovered)
             }
             .font(NocciType.meta(scale))
             .foregroundStyle(.white.opacity(0.6))
@@ -55,6 +75,10 @@ struct AlertCard: View {
         .padding(.horizontal, 20)
         .padding(.bottom, 16)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var isHovered: Bool {
+        swipeTracker?.hoveredID == item.id
     }
 
     /// Height the card needs at `width` to show everything without scrolling.
