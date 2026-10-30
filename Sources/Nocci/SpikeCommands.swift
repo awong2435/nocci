@@ -45,6 +45,11 @@ enum SpikeCommands {
             print(result)
             return true
         }
+        if arguments.contains("--nc-probe") {
+            // Opens the Notification Center panel, lists its entries by type and ID match only, closes it.
+            run { try probeNotificationCenter() }
+            return true
+        }
         if arguments.contains("--link-status") {
             // Which recent notifications carry a default-action link, by app and link scheme only (never the link).
             run { try source().describeLinks() }
@@ -140,6 +145,39 @@ enum SpikeCommands {
         return "Rendered to \(directory)"
     }
     #endif
+
+    /// Structure and ID matching only; never titles or bodies.
+    private static func probeNotificationCenter() throws -> String {
+        var lines = ["accessibility trusted: \(NotificationCenterUI.isTrusted)"]
+        guard NotificationCenterUI.isTrusted else { return lines.joined(separator: "\n") }
+        guard let clock = NotificationCenterUI.clockItem() else {
+            let bar = NotificationCenterUI.appElement(NotificationCenterUI.controlCenterID)
+                .flatMap { NotificationCenterUI.attribute($0, "AXExtrasMenuBar") as AXUIElement? }
+            let ids = bar.map { NotificationCenterUI.children($0).compactMap { NotificationCenterUI.attribute($0, kAXIdentifierAttribute) as String? } } ?? []
+            lines.append("clock not found; menu extras: \(ids.joined(separator: ", "))")
+            return lines.joined(separator: "\n")
+        }
+        let wasOpen = NotificationCenterUI.isPanelOpen()
+        lines.append("panel open before: \(wasOpen)")
+        if !wasOpen { lines.append("pressed clock: \(NotificationCenterUI.press(clock))") }
+        for _ in 0..<20 where !NotificationCenterUI.isPanelOpen() { Thread.sleep(forTimeInterval: 0.1) }
+        lines.append("panel open now: \(NotificationCenterUI.isPanelOpen())")
+        Thread.sleep(forTimeInterval: 0.3)
+
+        let entries = NotificationCenterUI.entries()
+        let databaseIDs = Set((try? source().recent(limit: 200, now: Date()).map(\.id)) ?? [])
+        lines.append("entries: \(entries.count) (stacks: \(entries.filter(\.isStack).count)), database IDs: \(databaseIDs.count)")
+        for entry in entries.prefix(15) {
+            let shape = String((entry.identifier ?? "none").prefix(48).map { $0.isLetter ? "a" : $0.isNumber ? "9" : $0 })
+            let id = NotificationCenterUI.normalizedID(entry.identifier)
+            lines.append("- \(entry.isStack ? "stack" : "entry") id=\(shape) inDatabase=\(id.map(databaseIDs.contains) ?? false) hasTitle=\(entry.title != nil) actions=\(entry.actions.map { $0.components(separatedBy: "\n").first ?? $0 }.joined(separator: "|"))")
+        }
+        if !wasOpen {
+            Thread.sleep(forTimeInterval: 0.2)
+            lines.append("closed again: \(NotificationCenterUI.press(clock))")
+        }
+        return lines.joined(separator: "\n")
+    }
 
     private static func source() throws -> DatabaseSource {
         guard let url = DatabaseSource.locate() else { throw DatabaseError.notFound }

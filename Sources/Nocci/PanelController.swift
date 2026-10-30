@@ -281,16 +281,23 @@ final class PanelController: NSObject {
 
     /// Opens the app a notification came from, then collapses the alert or closes the island.
     private func open(_ item: NotificationItem) {
-        // Which path a click takes, never the link or content.
-        let slackLink = item.appBundleID == SlackLink.bundleID
-            ? item.sourceID.flatMap { SlackLink.appURL(notificationID: $0, teamID: settings.slackTeamID) }
-            : nil
-        log.notice("click: app=\(item.appBundleID, privacy: .public) appLink=\(item.actionURL != nil, privacy: .public) slackID=\(item.sourceID != nil, privacy: .public) teamSet=\(SlackLink.normalizedTeamID(self.settings.slackTeamID) != nil, privacy: .public) slackLink=\(slackLink != nil, privacy: .public)")
-        // Straight to the event, conversation, or message when we know where; otherwise the app.
-        if let link = item.actionURL ?? slackLink {
-            NSWorkspace.shared.open(link)
-        } else if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: item.appBundleID) {
-            NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+        Task {
+            // Best: press the same notification in macOS's Notification Center, which does exactly what a real
+            // click does (Slack thread, Claude session). Needs Accessibility and the notification still there.
+            if await NotificationCenterUI.open(notificationID: item.id) {
+                log.notice("click: app=\(item.appBundleID, privacy: .public) via=notification-center")
+                return
+            }
+            // Otherwise the app's own link, a Slack link, or just the app. Logs the path, never the link or content.
+            let slackLink = item.appBundleID == SlackLink.bundleID
+                ? item.sourceID.flatMap { SlackLink.appURL(notificationID: $0, teamID: settings.slackTeamID) }
+                : nil
+            if let link = item.actionURL ?? slackLink {
+                NSWorkspace.shared.open(link)
+            } else if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: item.appBundleID) {
+                NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration()) { _, _ in }
+            }
+            log.notice("click: app=\(item.appBundleID, privacy: .public) via=\(item.actionURL != nil ? "app-link" : slackLink != nil ? "slack-link" : "app", privacy: .public)")
         }
         switch model.state {
         case .alert: model.dismissAlert()
