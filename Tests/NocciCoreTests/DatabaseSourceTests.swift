@@ -124,3 +124,20 @@ extension DatabaseSourceTests {
         #expect(next?.title == "Reused")
     }
 }
+
+extension DatabaseSourceTests {
+    @Test func clickLinkPrefersTheAppsOwnLink() {
+        let url = DatabaseSource.actionURL(bundleID: "com.apple.iCal", req: ["durl": "ical://ekevent/ABC"])
+        #expect(url?.absoluteString == "ical://ekevent/ABC")
+    }
+
+    @Test func slackClickLinkIsBuiltFromTheNotificationID() {
+        let url = DatabaseSource.actionURL(bundleID: "com.tinyspeck.slackmacgap", req: ["iden": "C012AB3CD_1761234567.123456"])
+        #expect(url?.absoluteString == "slack://channel?id=C012AB3CD&message=1761234567.123456")
+    }
+
+    @Test func noClickLinkWhenTheIDIsUnexpected() {
+        #expect(DatabaseSource.actionURL(bundleID: "com.tinyspeck.slackmacgap", req: ["iden": "something else"]) == nil)
+        #expect(DatabaseSource.actionURL(bundleID: "com.example.app", req: [:]) == nil)
+    }
+}

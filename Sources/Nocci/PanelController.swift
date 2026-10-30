@@ -281,7 +281,10 @@ final class PanelController: NSObject {
 
     /// Opens the app a notification came from, then collapses the alert or closes the island.
     private func open(_ item: NotificationItem) {
-        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: item.appBundleID) {
+        // Straight to the event, conversation, or message when the notification says where; otherwise the app.
+        if let link = item.actionURL {
+            NSWorkspace.shared.open(link)
+        } else if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: item.appBundleID) {
             NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
         }
         switch model.state {

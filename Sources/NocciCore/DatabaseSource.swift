@@ -134,6 +134,38 @@ public struct DatabaseSource: NotificationSource {
         }
     }
 
+    /// For the newest records: app, which `req` keys hold URLs, and their schemes. Never the URLs themselves.
+    public func describeLinks(limit: Int = 30) throws -> String {
+        try withDatabase { db in
+            let statement = try prepare(db, "SELECT a.identifier, r.data FROM record r JOIN app a ON a.app_id = r.app_id ORDER BY r.rec_id DESC LIMIT \(limit)")
+            defer { sqlite3_finalize(statement) }
+            var lines: [String] = []
+            while sqlite3_step(statement) == SQLITE_ROW {
+                let app = sqlite3_column_text(statement, 0).map { String(cString: $0) } ?? "?"
+                guard let data = columnData(statement, 1), let req = Self.plistDictionary(data)?["req"] as? [String: Any] else { continue }
+                let links = req.compactMap { key, value -> String? in
+                    guard let text = value as? String, let scheme = URL(string: text)?.scheme, text.contains(":") else { return nil }
+                    return "\(key)=\(scheme):"
+                }
+                var info = ""
+                if app.contains("slack"), let data = req["usda"] as? Data,
+                   let user = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] {
+                    // Field names and value types only.
+                    info = " usda{" + user.map { "\($0.key):\(type(of: $0.value))" }.sorted().joined(separator: ",") + "}"
+                } else if app.contains("slack") {
+                    // Shape only: letters become A/a and digits 9, so no real IDs are shown.
+                    func shape(_ value: Any?) -> String {
+                        guard let text = value as? String else { return value.map { "\(type(of: $0))" } ?? "none" }
+                        return String(text.prefix(60).map { $0.isUppercase ? "A" : $0.isLowercase ? "a" : $0.isNumber ? "9" : $0 })
+                    }
+                    info = " keys[\(req.keys.sorted().joined(separator: ","))] iden=\(shape(req["iden"])) thre=\(shape(req["thre"]))"
+                }
+                lines.append("\(app): \(links.isEmpty ? "no link" : links.sorted().joined(separator: ", "))\(info)")
+            }
+            return Dictionary(grouping: lines, by: { $0 }).map { "\($0.value.count)× \($0.key)" }.sorted().joined(separator: "\n")
+        }
+    }
+
     // MARK: - Parsing
 
     /// Builds an item from one `record` row. Returns `nil` if the plist is unreadable.
@@ -154,8 +186,30 @@ public struct DatabaseSource: NotificationSource {
             subtitle: (req["subt"] as? String).flatMap { $0.isEmpty ? nil : $0 },
             body: req["body"] as? String ?? "",
             // Core Data timestamp: seconds since 2001-01-01.
-            date: Date(timeIntervalSinceReferenceDate: deliveredDate)
+            date: Date(timeIntervalSinceReferenceDate: deliveredDate),
+            actionURL: actionURL(bundleID: bundleID, req: req)
         )
+    }
+
+    /// Where a click should go. Prefers the link the app attached (`durl`; Calendar and Messages set one).
+    /// Slack sets none, but its notification ID is "<channel ID>_<message timestamp>", which is enough for a
+    /// `slack://` link to that message.
+    static func actionURL(bundleID: String, req: [String: Any]) -> URL? {
+        if let link = req["durl"] as? String, let url = URL(string: link), url.scheme != nil {
+            return url
+        }
+        if bundleID == "com.tinyspeck.slackmacgap", let id = req["iden"] as? String {
+            let parts = id.split(separator: "_", maxSplits: 1).map(String.init)
+            guard parts.count == 2,
+                  parts[0].allSatisfy({ $0.isUppercase || $0.isNumber }),
+                  parts[1].allSatisfy({ $0.isNumber || $0 == "." }) else { return nil }
+            var link = URLComponents()
+            link.scheme = "slack"
+            link.host = "channel"
+            link.queryItems = [URLQueryItem(name: "id", value: parts[0]), URLQueryItem(name: "message", value: parts[1])]
+            return link.url
+        }
+        return nil
     }
 
     static func plistDictionary(_ data: Data) -> [String: Any]? {

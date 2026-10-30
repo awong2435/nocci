@@ -45,6 +45,11 @@ enum SpikeCommands {
             print(result)
             return true
         }
+        if arguments.contains("--link-status") {
+            // Which recent notifications carry a default-action link, by app and link scheme only (never the link).
+            run { try source().describeLinks() }
+            return true
+        }
         if arguments.contains("--automation-status") {
             // Reads the Automation permission for Music and Spotify without ever asking.
             let semaphore = DispatchSemaphore(value: 0)

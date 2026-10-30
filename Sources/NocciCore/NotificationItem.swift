@@ -9,6 +9,9 @@ public struct NotificationItem: Identifiable, Hashable, Sendable {
     public let subtitle: String?
     public let body: String
     public let date: Date
+    /// Where clicking should go, when known: the link the app attached (Calendar, Messages), or one built from
+    /// the notification's ID (Slack). Nil means just open the app. Memory only.
+    public let actionURL: URL?
 
     public init(
         id: String,
@@ -17,7 +20,8 @@ public struct NotificationItem: Identifiable, Hashable, Sendable {
         title: String,
         subtitle: String? = nil,
         body: String,
-        date: Date
+        date: Date,
+        actionURL: URL? = nil
     ) {
         self.id = id
         self.appBundleID = appBundleID
@@ -26,5 +30,6 @@ public struct NotificationItem: Identifiable, Hashable, Sendable {
         self.subtitle = subtitle
         self.body = body
         self.date = date
+        self.actionURL = actionURL
     }
 }
