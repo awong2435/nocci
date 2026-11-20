@@ -41,8 +41,9 @@ scripts/make-dmg.sh
 ```
 
 Makes `build/Nocci-<version>.dmg` with Nocci, an Applications shortcut, and a "Read Me First" that explains the
-one-time Open Anyway step. The copy is signed ad-hoc (no personal certificate embedded) and isn't notarized, so
-it's for testers, not a public release.
+one-time Open Anyway step. The copy has its signature removed, debug symbols stripped, and is re-signed ad-hoc, so
+no certificate, name, email, or build path from your Mac goes out (the script checks). It isn't notarized, so
+macOS asks for Open Anyway on first launch. Fine for early GitHub pre-releases and testers.
 
 ## Notes
 

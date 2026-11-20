@@ -53,8 +53,11 @@ then tuck away behind a small green light. Hover over the notch to see them all,
 
 ## Install
 
-**Download:** grab the latest `Nocci-<version>.zip` from [Releases](../../releases), unzip it, and drag Nocci to
+**Download:** grab the latest `Nocci-<version>.dmg` from [Releases](../../releases), open it, and drag Nocci to
 Applications. Open it, and the setup guide walks you through permissions.
+
+> Early builds aren't notarized by Apple yet, so macOS blocks the first launch. Open System Settings › Privacy &
+> Security, scroll down, and click **Open Anyway** next to the Nocci message. You only do this once.
 
 **Build it yourself** (see Requirements above):
 

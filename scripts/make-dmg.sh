@@ -18,7 +18,18 @@ rm -rf "$staging" "$dmg"
 mkdir -p "$staging"
 ditto build/Nocci.app "$staging/Nocci.app"
 # Re-sign only the copy, so your own build/Nocci.app keeps its signature (and its permissions).
+# Remove the old signature first: re-signing in place can leave the old certificate's bytes (your name and
+# Apple ID email) in the binary. Strip debug symbols too, since they record this Mac's build paths.
+copy_bin="$staging/Nocci.app/Contents/MacOS/Nocci"
+codesign --remove-signature "$copy_bin"
+strip -S -x "$copy_bin"
 codesign --force --entitlements Resources/Nocci.entitlements --sign "${NOCCI_SIGN_IDENTITY:--}" "$staging/Nocci.app"
+# Refuse to package anything that still names this Mac's user or a signing identity.
+if LC_ALL=C grep -a -q -E "$HOME|Apple Development:|Developer ID Application:" -r "$staging/Nocci.app" \
+    && [[ -z ${NOCCI_SIGN_IDENTITY:-} ]]; then
+    echo "make-dmg: personal data left in the app copy; not packaging it" >&2
+    exit 1
+fi
 ln -s /Applications "$staging/Applications"
 cat > "$staging/Read Me First.txt" <<'EOF'
 Nocci shows your Mac's notifications in the notch.
