@@ -3,7 +3,7 @@ import Observation
 import OSLog
 import NocciCore
 
-private let log = Logger(subsystem: "local.nocci", category: "app")
+private let log = Logger(subsystem: "io.github.awong2435.nocci", category: "app")
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {

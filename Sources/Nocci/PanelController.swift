@@ -4,7 +4,7 @@ import OSLog
 import SwiftUI
 import NocciCore
 
-private let log = Logger(subsystem: "local.nocci", category: "panel")
+private let log = Logger(subsystem: "io.github.awong2435.nocci", category: "panel")
 
 /// What the island shows. `size` and `bottomRadius` animate; content is laid out at its final size.
 @MainActor
@@ -85,7 +85,7 @@ final class PanelController: NSObject {
     /// Shown in the alert preview. Not a real notification.
     private static let sampleAlert = NotificationItem(
         id: "nocci-preview",
-        appBundleID: "local.nocci",
+        appBundleID: "io.github.awong2435.nocci",
         appName: "Nocci",
         title: "Preview",
         subtitle: "This is how alerts look",

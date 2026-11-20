@@ -39,7 +39,7 @@ Applications. Open it, and the setup guide walks you through permissions.
 **Build it yourself** (needs macOS 14 or later and Xcode or the Command Line Tools):
 
 ```bash
-git clone https://github.com/<your-username>/nocci.git
+git clone https://github.com/awong2435/nocci.git
 cd nocci && scripts/build-app.sh
 mv build/Nocci.app /Applications/ && open /Applications/Nocci.app
 ```
@@ -52,7 +52,7 @@ Nocci asks only for what you use, and the setup guide (menu bar › Setup Guide�
 |---|---|---|
 | Full Disk Access | macOS keeps notifications in a protected database. | Yes |
 | Automation (Spotify, Music) | To show what's playing and control playback. Asked the first time you use the controls. | Media plugin only |
-| Accessibility | Play/pause for other apps (media keys) and Escape to close the island. | Optional |
+| Accessibility | Clicking a notification opens the exact message, and clearing it clears it from Notification Center too. Also play/pause for other apps and Escape to close the island. | Optional |
 
 To stop seeing the usual banners in the top right, turn off **Desktop** for each app in System Settings ›
 Notifications (keep **Notification Center** on).
@@ -66,7 +66,8 @@ Notifications (keep **Notification Center** on).
 ## Known limits
 
 - Alerts appear about 6 to 8 seconds after a notification arrives, because macOS saves notifications in batches.
-- Dismissing in Nocci doesn't remove the notification from macOS's Notification Center.
+- Without Accessibility, clicking opens the app rather than the exact message, and clearing in Nocci doesn't
+  clear macOS's Notification Center.
 - Reading media from apps other than Spotify and Music uses an undocumented part of macOS and may break with a
   macOS update.
 
@@ -79,6 +80,14 @@ swift build                     # compile
 swift test                      # unit tests
 scripts/build-app.sh debug      # build/Nocci.app, quick debug build
 scripts/build-app.sh            # universal release build
+```
+
+**Secret scan.** A [gitleaks](https://github.com/gitleaks/gitleaks) pre-commit hook blocks commits that add API keys,
+tokens, or private keys, and GitHub Actions scans every push. Turn the hook on once per clone:
+
+```bash
+brew install gitleaks
+git config core.hooksPath .githooks
 ```
 
 Layout: `Sources/NocciCore` (models, store, database reader, no UI), `Sources/Nocci` (the app),

@@ -81,7 +81,7 @@ final class NowPlayingClient: @unchecked Sendable {
     static let notAuthorized = -1743
 
     /// Serial queue that owns `scripts` and runs every Apple Event.
-    private let queue = DispatchQueue(label: "local.nocci.now-playing")
+    private let queue = DispatchQueue(label: "io.github.awong2435.nocci.now-playing")
     private var scripts: [String: NSAppleScript] = [:]
 
     /// Whether the app is already running.

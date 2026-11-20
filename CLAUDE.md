@@ -27,6 +27,7 @@ No Xcode project. A Swift Package, macOS 14+, no dependencies.
 - `scripts/build-app.sh`: universal release build into `build/Nocci.app` (see Signing below); `scripts/build-app.sh debug` for a quicker debug build with the debug-only tools (`--render-media`)
 - `scripts/release.sh`: signed, notarized release zip; see `RELEASING.md`
 - `open build/Nocci.app`: run
+- Secret scan: `git config core.hooksPath .githooks` turns on the gitleaks pre-commit hook (`brew install gitleaks`). Never bypass it with `--no-verify`.
 
 Use Xcode's toolchain: with only the Command Line Tools selected, incremental `swift test` fails with "plugin for module 'TestingMacros' not found". Either `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` once, or prefix commands with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`.
 

@@ -3,7 +3,7 @@ import NocciCore
 import OSLog
 import SwiftUI
 
-private let log = Logger(subsystem: "local.nocci", category: "swipe")
+private let log = Logger(subsystem: "io.github.awong2435.nocci", category: "swipe")
 
 /// Swipe to dismiss, for both input styles: two-finger trackpad swipes (scroll events with phases, fed in by the
 /// panel's scroll monitor) and click-dragging. Alerts swipe up; list rows swipe sideways.
