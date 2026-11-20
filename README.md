@@ -31,12 +31,32 @@ then tuck away behind a small green light. Hover over the notch to see them all,
 - **The one network request** is the optional media plugin downloading Spotify album covers from Spotify's own
   image server. Nothing about you or your notifications is sent.
 
+## Requirements
+
+**To run Nocci**
+
+- macOS 14 (Sonoma) or later, on Apple silicon or Intel.
+- A MacBook with a notch is best. On other screens, Nocci shows as a small black pill at the top center of the
+  screen. You can pick the screen in Settings.
+- Full Disk Access, to read your notifications. The setup guide walks you through it.
+- Optional:
+  - **Accessibility** lets a click open the exact message, and lets clearing a notification in Nocci clear it from
+    Notification Center too.
+  - The media plugin works with Spotify, Apple Music, or anything else playing on your Mac.
+
+**To build from source**
+
+- Xcode 16 or later, which includes Swift 6. The Command Line Tools alone can compile, but they can't make the
+  universal release build or run the tests.
+- The Apple Development certificate you get by signing in to Xcode with your Apple ID is optional. Without one,
+  Nocci is signed ad-hoc, and macOS forgets its Full Disk Access every time you rebuild.
+
 ## Install
 
 **Download:** grab the latest `Nocci-<version>.zip` from [Releases](../../releases), unzip it, and drag Nocci to
 Applications. Open it, and the setup guide walks you through permissions.
 
-**Build it yourself** (needs macOS 14 or later and Xcode or the Command Line Tools):
+**Build it yourself** (see Requirements above):
 
 ```bash
 git clone https://github.com/awong2435/nocci.git
